@@ -12,6 +12,9 @@
     "minimatch": "11.0.1"
   },
   "scripts": {
+    "prepare": "node scripts/install-hooks.mjs",
+    "hooks:install": "node scripts/install-hooks.mjs",
+    "commitlint": "commitlint",
     "dev": "node --env-file-if-exists=.env --import tsx --watch src/server.ts",
     "build": "tsc -p tsconfig.build.json",
     "start": "node --env-file-if-exists=.env dist/server.js",
@@ -42,6 +45,8 @@
   },
   "devDependencies": {
     "@apidevtools/swagger-parser": "13.1.0",
+    "@commitlint/cli": "21.2.4",
+    "@commitlint/config-conventional": "21.2.4",
     "@eslint/js": "10.0.1",
     "@types/bcrypt": "6.0.0",
     "@types/cors": "2.8.19",
@@ -52,6 +57,7 @@
     "@types/swagger-ui-express": "4.1.8",
     "eslint": "10.14.0",
     "eslint-config-prettier": "10.1.8",
+    "husky": "9.1.7",
     "prettier": "3.9.10",
     "supertest": "7.3.2",
     "tsx": "4.23.15",
