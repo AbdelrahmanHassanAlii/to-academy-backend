@@ -83,6 +83,18 @@ describe('foundation HTTP contracts', () => {
     expect(large.body.code).toBe('PAYLOAD_TOO_LARGE');
   });
 
+  it('documents course PATCH fields without creation defaults', async () => {
+    const spec = await request(app()).get('/api/v1/openapi.json');
+    for (const field of Object.values(
+      spec.body.components.schemas.CourseUpdateRequest.properties,
+    )) {
+      expect(field).not.toHaveProperty('default');
+    }
+    expect(spec.body.components.schemas.CourseCreateRequest.properties.status.default).toBe(
+      'draft',
+    );
+  });
+
   it('serves only implemented OpenAPI operations and Swagger UI', async () => {
     const spec = await request(app()).get('/api/v1/openapi.json');
     expect(spec.status).toBe(200);
@@ -90,12 +102,17 @@ describe('foundation HTTP contracts', () => {
       '/admin/admins/me',
       '/admin/categories',
       '/admin/categories/{id}',
+      '/admin/courses',
+      '/admin/courses/{id}',
       '/auth/csrf',
       '/auth/login',
       '/auth/logout',
       '/auth/me',
       '/categories',
       '/categories/{slug}',
+      '/courses',
+      '/courses/featured',
+      '/courses/{slug}',
       '/health',
       '/ready',
     ]);

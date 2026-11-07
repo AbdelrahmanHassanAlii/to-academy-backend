@@ -1,9 +1,9 @@
 openapi: 3.0.3
 info:
   title: TO Academy API
-  version: 0.3.0
-  description: TO Academy foundation, administrator authentication and localized categories. No
-    courses or other business modules.
+  version: 0.4.0
+  description: TO Academy foundation, administrator sessions, localized categories and courses. Only
+    implemented endpoints are listed.
 servers:
   - url: /api/v1
 tags:
@@ -12,6 +12,7 @@ tags:
   - name: Authentication
   - name: Administrators
   - name: Categories
+  - name: Courses
 paths:
   /health:
     get:
@@ -883,8 +884,9 @@ paths:
             type: string
             pattern: ^[a-f0-9]{64}$
       description:
-        Sets isActive=false, never physically deletes. Idempotent deactivation of existing
-        records. Future course references remain intact; no course model implemented.
+        Sets isActive=false; never physically deletes. Retains course references. Public course
+        reads hide courses whose category is inactive; reactivation restores otherwise published
+        courses.
       responses:
         '200':
           description: Retained category with isActive:false
@@ -920,6 +922,615 @@ paths:
           $ref: '#/components/responses/TooLarge'
         '415':
           $ref: '#/components/responses/UnsupportedMedia'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          description: DATABASE_UNAVAILABLE or SESSION_UNAVAILABLE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /courses:
+    get:
+      tags:
+        - Courses
+      operationId: listPublicCourses
+      summary: List published courses
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100000
+            default: 1
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 12
+        - in: query
+          name: category
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 120
+          description:
+            Public category slug; admin category ObjectId. Public results require an active
+            existing category.
+        - in: query
+          name: q
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 100
+          description: Literal case-insensitive Arabic/English title search; regex syntax is escaped.
+        - in: query
+          name: featured
+          schema:
+            type: boolean
+          description: Only exact true/false query strings. Featured endpoint always forces true.
+        - in: query
+          name: sort
+          schema:
+            type: string
+            enum:
+              - newest
+              - oldest
+              - title
+            default: newest
+          description:
+            createdAt descending/ascending, or Arabic title ascending (MongoDB binary order);
+            stable id tie-break.
+      description:
+        Published only with an active existing category. Strict filter allowlist, no session
+        creation. Cards exclude full content, status and publication metadata. Unknown/inactive
+        category filter returns an empty list.
+      responses:
+        '200':
+          description: Safe paginated course cards
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CoursePublicListResponse'
+        '400':
+          description: 'VALIDATION_ERROR: invalid body, query, id, pricing or publication content'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Untrusted browser Origin
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          description: DATABASE_UNAVAILABLE or SESSION_UNAVAILABLE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /courses/featured:
+    get:
+      tags:
+        - Courses
+      operationId: listFeaturedCourses
+      summary: List featured published courses
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100000
+            default: 1
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 12
+        - in: query
+          name: category
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 120
+          description:
+            Public category slug; admin category ObjectId. Public results require an active
+            existing category.
+        - in: query
+          name: q
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 100
+          description: Literal case-insensitive Arabic/English title search; regex syntax is escaped.
+        - in: query
+          name: featured
+          schema:
+            type: boolean
+          description: Only exact true/false query strings. Featured endpoint always forces true.
+        - in: query
+          name: sort
+          schema:
+            type: string
+            enum:
+              - newest
+              - oldest
+              - title
+            default: newest
+          description:
+            createdAt descending/ascending, or Arabic title ascending (MongoDB binary order);
+            stable id tie-break.
+      description:
+        Published only with an active existing category. Strict filter allowlist, no session
+        creation. Cards exclude full content, status and publication metadata. Unknown/inactive
+        category filter returns an empty list.
+      responses:
+        '200':
+          description: Safe paginated course cards
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CoursePublicListResponse'
+        '400':
+          description: 'VALIDATION_ERROR: invalid body, query, id, pricing or publication content'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Untrusted browser Origin
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          description: DATABASE_UNAVAILABLE or SESSION_UNAVAILABLE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /courses/{slug}:
+    get:
+      tags:
+        - Courses
+      operationId: getPublicCourse
+      summary: Read a published course by slug
+      parameters:
+        - in: path
+          name: slug
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 120
+          description: Normalized Arabic/Latin Unicode slug; featured is reserved.
+      responses:
+        '200':
+          description: Safe public course detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CoursePublicResponse'
+        '400':
+          description: 'VALIDATION_ERROR: invalid body, query, id, pricing or publication content'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Untrusted browser Origin
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: COURSE_NOT_FOUND; missing/inactive category also hides public courses.
+            CATEGORY_NOT_FOUND for invalid category assignment.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          description: DATABASE_UNAVAILABLE or SESSION_UNAVAILABLE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /admin/courses:
+    get:
+      tags:
+        - Courses
+      operationId: listAdminCourses
+      summary: List courses in any lifecycle state
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100000
+            default: 1
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - in: query
+          name: category
+          schema:
+            type: string
+            pattern: ^[a-fA-F0-9]{24}$
+          description:
+            Public category slug; admin category ObjectId. Public results require an active
+            existing category.
+        - in: query
+          name: q
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 100
+          description: Literal case-insensitive Arabic/English title search; regex syntax is escaped.
+        - in: query
+          name: featured
+          schema:
+            type: boolean
+          description: Only exact true/false query strings. Featured endpoint always forces true.
+        - in: query
+          name: sort
+          schema:
+            type: string
+            enum:
+              - newest
+              - oldest
+              - title
+            default: newest
+          description:
+            createdAt descending/ascending, or Arabic title ascending (MongoDB binary order);
+            stable id tie-break.
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum:
+              - draft
+              - published
+              - archived
+      responses:
+        '200':
+          description: Paginated editable courses
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CourseAdminListResponse'
+        '400':
+          description: 'VALIDATION_ERROR: invalid body, query, id, pricing or publication content'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Missing, expired or inactive administrator session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: CSRF, trusted Origin or role denied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          description: DATABASE_UNAVAILABLE or SESSION_UNAVAILABLE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      tags:
+        - Courses
+      operationId: createCourse
+      summary: Create draft or publish a complete course
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: header
+          name: Origin
+          required: true
+          schema:
+            type: string
+          example: https://admin.toacademy.com
+        - in: header
+          name: X-CSRF-Token
+          required: true
+          schema:
+            type: string
+            pattern: ^[a-f0-9]{64}$
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CourseCreateRequest'
+      description: Requires existing category for all states; active category and
+        descriptions/duration/trainingMode for publication. Free implies price zero, otherwise
+        positive price or null. Generated slugs allocate bounded deterministic suffixes, explicit
+        collisions fail. publishedAt is server managed.
+      responses:
+        '201':
+          description: Created course
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CourseAdminResponse'
+        '400':
+          description: 'VALIDATION_ERROR: invalid body, query, id, pricing or publication content'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Missing, expired or inactive administrator session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: CSRF, trusted Origin or role denied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: COURSE_NOT_FOUND; missing/inactive category also hides public courses.
+            CATEGORY_NOT_FOUND for invalid category assignment.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: COURSE_SLUG_EXISTS, COURSE_SLUG_LOCKED, CATEGORY_INACTIVE or COURSE_CHANGED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          $ref: '#/components/responses/TooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMedia'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          description: DATABASE_UNAVAILABLE or SESSION_UNAVAILABLE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /admin/courses/{id}:
+    get:
+      tags:
+        - Courses
+      operationId: getAdminCourse
+      summary: Read editable course detail
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            pattern: ^[a-fA-F0-9]{24}$
+      responses:
+        '200':
+          description: Course detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CourseAdminResponse'
+        '400':
+          description: 'VALIDATION_ERROR: invalid body, query, id, pricing or publication content'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Missing, expired or inactive administrator session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: CSRF, trusted Origin or role denied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: COURSE_NOT_FOUND; missing/inactive category also hides public courses.
+            CATEGORY_NOT_FOUND for invalid category assignment.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          description: DATABASE_UNAVAILABLE or SESSION_UNAVAILABLE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    patch:
+      tags:
+        - Courses
+      operationId: updateCourse
+      summary: Edit content, pricing and publication state
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            pattern: ^[a-fA-F0-9]{24}$
+        - in: header
+          name: Origin
+          required: true
+          schema:
+            type: string
+          example: https://admin.toacademy.com
+        - in: header
+          name: X-CSRF-Token
+          required: true
+          schema:
+            type: string
+            pattern: ^[a-f0-9]{64}$
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CourseUpdateRequest'
+      description:
+        Omitted root fields preserved; supplied localized objects, arrays and seo replace that
+        field. Slug never changes implicitly on title edit and is locked after first publication,
+        including later draft/archive states. Optimistic concurrency conflicts return409. Setting
+        isFree=true without price sets zero; switching to non-free must also provide positive price
+        or null. Active category required whenever resulting state is published. First publishedAt
+        is retained.
+      responses:
+        '200':
+          description: Updated course
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CourseAdminResponse'
+        '400':
+          description: 'VALIDATION_ERROR: invalid body, query, id, pricing or publication content'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Missing, expired or inactive administrator session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: CSRF, trusted Origin or role denied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: COURSE_NOT_FOUND; missing/inactive category also hides public courses.
+            CATEGORY_NOT_FOUND for invalid category assignment.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: COURSE_SLUG_EXISTS, COURSE_SLUG_LOCKED, CATEGORY_INACTIVE or COURSE_CHANGED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          $ref: '#/components/responses/TooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMedia'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          description: DATABASE_UNAVAILABLE or SESSION_UNAVAILABLE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      tags:
+        - Courses
+      operationId: archiveCourse
+      summary: Archive without physical deletion
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            pattern: ^[a-fA-F0-9]{24}$
+        - in: header
+          name: Origin
+          required: true
+          schema:
+            type: string
+          example: https://admin.toacademy.com
+        - in: header
+          name: X-CSRF-Token
+          required: true
+          schema:
+            type: string
+            pattern: ^[a-f0-9]{64}$
+      description:
+        Sets status=archived. Existing references and published URL identity remain intact.
+        Repeated archive succeeds; can archive even with a missing/inactive category. Explicit PATCH
+        can later restore publication after eligibility checks.
+      responses:
+        '200':
+          description: Retained archived course
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CourseAdminResponse'
+        '400':
+          description: 'VALIDATION_ERROR: invalid body, query, id, pricing or publication content'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Missing, expired or inactive administrator session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: CSRF, trusted Origin or role denied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: COURSE_NOT_FOUND; missing/inactive category also hides public courses.
+            CATEGORY_NOT_FOUND for invalid category assignment.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '500':
           $ref: '#/components/responses/InternalError'
         '503':
@@ -1304,6 +1915,691 @@ components:
                 $ref: '#/components/schemas/CategoryAdmin'
             meta:
               $ref: '#/components/schemas/PaginationMeta'
+    CourseTitle:
+      type: object
+      additionalProperties: false
+      required:
+        - ar
+      properties:
+        ar:
+          type: string
+          minLength: 1
+          maxLength: 200
+        en:
+          type: string
+          minLength: 1
+          maxLength: 200
+    CourseSummary:
+      type: object
+      additionalProperties: false
+      required:
+        - ar
+      properties:
+        ar:
+          type: string
+          minLength: 1
+          maxLength: 600
+        en:
+          type: string
+          minLength: 1
+          maxLength: 600
+    CourseDescription:
+      type: object
+      additionalProperties: false
+      required:
+        - ar
+      properties:
+        ar:
+          type: string
+          minLength: 1
+          maxLength: 30000
+        en:
+          type: string
+          minLength: 1
+          maxLength: 30000
+    CourseCurriculumUnit:
+      type: object
+      additionalProperties: false
+      required:
+        - title
+        - topics
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        topics:
+          type: array
+          maxItems: 50
+          items:
+            type: string
+            minLength: 1
+            maxLength: 500
+    CourseSeo:
+      type: object
+      additionalProperties: false
+      properties:
+        title:
+          $ref: '#/components/schemas/CourseTitle'
+        description:
+          $ref: '#/components/schemas/CourseSummary'
+    CourseCategory:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+        - slug
+      properties:
+        id:
+          type: string
+          pattern: ^[a-fA-F0-9]{24}$
+        name:
+          $ref: '#/components/schemas/CategoryName'
+        slug:
+          type: string
+    CourseCreateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - title
+        - category
+      properties:
+        title:
+          $ref: '#/components/schemas/CourseTitle'
+        slug:
+          type: string
+          minLength: 1
+          maxLength: 120
+          description:
+            NFKC/lowercase/hyphen normalized; Unicode letters/numbers/marks only. featured
+            reserved. Auto-derived from English title if available otherwise Arabic, punctuation
+            removed; suffix -2, -3 etc on generated collisions. Explicit duplicates409.
+        shortDescription:
+          $ref: '#/components/schemas/CourseSummary'
+        description:
+          $ref: '#/components/schemas/CourseDescription'
+        category:
+          type: string
+          pattern: ^[a-fA-F0-9]{24}$
+        thumbnail:
+          type: string
+          pattern: ^[a-fA-F0-9]{24}$
+          nullable: true
+          description: Nullable media ObjectId; syntax only until Media milestone.
+        curriculum:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/CourseCurriculumUnit'
+          default: []
+        lectureCount:
+          type: integer
+          minimum: 0
+          maximum: 10000
+          default: 0
+        duration:
+          type: string
+          minLength: 1
+          maxLength: 120
+        targetAudience:
+          type: array
+          maxItems: 50
+          items:
+            type: string
+            minLength: 1
+            maxLength: 300
+          default: []
+        trainingMode:
+          type: string
+          enum:
+            - online-live
+            - online-recorded
+            - hybrid
+        price:
+          type: integer
+          minimum: 0
+          maximum: 9007199254740991
+          nullable: true
+          description:
+            Integer piastres, not EGP major units. null means unannounced/inquire. Free requires
+            zero; non-free positive or null. No hidden unpublished amount is stored.
+        currency:
+          type: string
+          enum:
+            - EGP
+          default: EGP
+        isFree:
+          type: boolean
+          default: false
+        status:
+          type: string
+          enum:
+            - draft
+            - published
+            - archived
+          default: draft
+        featured:
+          type: boolean
+          default: false
+        seo:
+          $ref: '#/components/schemas/CourseSeo'
+    CourseUpdateRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        title:
+          $ref: '#/components/schemas/CourseTitle'
+        slug:
+          type: string
+          minLength: 1
+          maxLength: 120
+          description:
+            NFKC/lowercase/hyphen normalized; Unicode letters/numbers/marks only. featured
+            reserved. Auto-derived from English title if available otherwise Arabic, punctuation
+            removed; suffix -2, -3 etc on generated collisions. Explicit duplicates409.
+        shortDescription:
+          $ref: '#/components/schemas/CourseSummary'
+        description:
+          $ref: '#/components/schemas/CourseDescription'
+        category:
+          type: string
+          pattern: ^[a-fA-F0-9]{24}$
+        thumbnail:
+          type: string
+          pattern: ^[a-fA-F0-9]{24}$
+          nullable: true
+          description: Nullable media ObjectId; syntax only until Media milestone.
+        curriculum:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/CourseCurriculumUnit'
+        lectureCount:
+          type: integer
+          minimum: 0
+          maximum: 10000
+        duration:
+          type: string
+          minLength: 1
+          maxLength: 120
+        targetAudience:
+          type: array
+          maxItems: 50
+          items:
+            type: string
+            minLength: 1
+            maxLength: 300
+        trainingMode:
+          type: string
+          enum:
+            - online-live
+            - online-recorded
+            - hybrid
+        price:
+          type: integer
+          minimum: 0
+          maximum: 9007199254740991
+          nullable: true
+          description:
+            Integer piastres, not EGP major units. null means unannounced/inquire. Free requires
+            zero; non-free positive or null. No hidden unpublished amount is stored.
+        currency:
+          type: string
+          enum:
+            - EGP
+        isFree:
+          type: boolean
+        status:
+          type: string
+          enum:
+            - draft
+            - published
+            - archived
+        featured:
+          type: boolean
+        seo:
+          $ref: '#/components/schemas/CourseSeo'
+    CourseCard:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - title
+        - slug
+        - shortDescription
+        - category
+        - thumbnail
+        - duration
+        - price
+        - currency
+        - isFree
+        - featured
+      properties:
+        id:
+          type: string
+          pattern: ^[a-fA-F0-9]{24}$
+        title:
+          $ref: '#/components/schemas/CourseTitle'
+        slug:
+          type: string
+          minLength: 1
+          maxLength: 120
+          description:
+            NFKC/lowercase/hyphen normalized; Unicode letters/numbers/marks only. featured
+            reserved. Auto-derived from English title if available otherwise Arabic, punctuation
+            removed; suffix -2, -3 etc on generated collisions. Explicit duplicates409.
+        shortDescription:
+          type: object
+          additionalProperties: false
+          required:
+            - ar
+          properties:
+            ar:
+              type: string
+              minLength: 1
+              maxLength: 600
+            en:
+              type: string
+              minLength: 1
+              maxLength: 600
+          nullable: true
+        category:
+          $ref: '#/components/schemas/CourseCategory'
+        thumbnail:
+          type: string
+          pattern: ^[a-fA-F0-9]{24}$
+          nullable: true
+          description: Nullable media ObjectId; syntax only until Media milestone.
+        duration:
+          type: string
+          minLength: 1
+          maxLength: 120
+          nullable: true
+        price:
+          type: integer
+          minimum: 0
+          maximum: 9007199254740991
+          nullable: true
+          description:
+            Integer piastres, not EGP major units. null means unannounced/inquire. Free requires
+            zero; non-free positive or null. No hidden unpublished amount is stored.
+        currency:
+          type: string
+          enum:
+            - EGP
+          default: EGP
+        isFree:
+          type: boolean
+          default: false
+        featured:
+          type: boolean
+          default: false
+    CoursePublic:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - title
+        - slug
+        - shortDescription
+        - category
+        - thumbnail
+        - duration
+        - price
+        - currency
+        - isFree
+        - featured
+        - description
+        - curriculum
+        - lectureCount
+        - targetAudience
+        - trainingMode
+        - seo
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          pattern: ^[a-fA-F0-9]{24}$
+        title:
+          $ref: '#/components/schemas/CourseTitle'
+        slug:
+          type: string
+          minLength: 1
+          maxLength: 120
+          description:
+            NFKC/lowercase/hyphen normalized; Unicode letters/numbers/marks only. featured
+            reserved. Auto-derived from English title if available otherwise Arabic, punctuation
+            removed; suffix -2, -3 etc on generated collisions. Explicit duplicates409.
+        shortDescription:
+          type: object
+          additionalProperties: false
+          required:
+            - ar
+          properties:
+            ar:
+              type: string
+              minLength: 1
+              maxLength: 600
+            en:
+              type: string
+              minLength: 1
+              maxLength: 600
+          nullable: true
+        category:
+          $ref: '#/components/schemas/CourseCategory'
+        thumbnail:
+          type: string
+          pattern: ^[a-fA-F0-9]{24}$
+          nullable: true
+          description: Nullable media ObjectId; syntax only until Media milestone.
+        duration:
+          type: string
+          minLength: 1
+          maxLength: 120
+          nullable: true
+        price:
+          type: integer
+          minimum: 0
+          maximum: 9007199254740991
+          nullable: true
+          description:
+            Integer piastres, not EGP major units. null means unannounced/inquire. Free requires
+            zero; non-free positive or null. No hidden unpublished amount is stored.
+        currency:
+          type: string
+          enum:
+            - EGP
+          default: EGP
+        isFree:
+          type: boolean
+          default: false
+        featured:
+          type: boolean
+          default: false
+        description:
+          type: object
+          additionalProperties: false
+          required:
+            - ar
+          properties:
+            ar:
+              type: string
+              minLength: 1
+              maxLength: 30000
+            en:
+              type: string
+              minLength: 1
+              maxLength: 30000
+          nullable: true
+        curriculum:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/CourseCurriculumUnit'
+          default: []
+        lectureCount:
+          type: integer
+          minimum: 0
+          maximum: 10000
+          default: 0
+        targetAudience:
+          type: array
+          maxItems: 50
+          items:
+            type: string
+            minLength: 1
+            maxLength: 300
+          default: []
+        trainingMode:
+          type: string
+          enum:
+            - online-live
+            - online-recorded
+            - hybrid
+          nullable: true
+        seo:
+          $ref: '#/components/schemas/CourseSeo'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    CourseAdmin:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - title
+        - slug
+        - shortDescription
+        - category
+        - thumbnail
+        - duration
+        - price
+        - currency
+        - isFree
+        - featured
+        - description
+        - curriculum
+        - lectureCount
+        - targetAudience
+        - trainingMode
+        - seo
+        - createdAt
+        - updatedAt
+        - status
+        - publishedAt
+      properties:
+        id:
+          type: string
+          pattern: ^[a-fA-F0-9]{24}$
+        title:
+          $ref: '#/components/schemas/CourseTitle'
+        slug:
+          type: string
+          minLength: 1
+          maxLength: 120
+          description:
+            NFKC/lowercase/hyphen normalized; Unicode letters/numbers/marks only. featured
+            reserved. Auto-derived from English title if available otherwise Arabic, punctuation
+            removed; suffix -2, -3 etc on generated collisions. Explicit duplicates409.
+        shortDescription:
+          type: object
+          additionalProperties: false
+          required:
+            - ar
+          properties:
+            ar:
+              type: string
+              minLength: 1
+              maxLength: 600
+            en:
+              type: string
+              minLength: 1
+              maxLength: 600
+          nullable: true
+        category:
+          type: string
+          pattern: ^[a-fA-F0-9]{24}$
+        thumbnail:
+          type: string
+          pattern: ^[a-fA-F0-9]{24}$
+          nullable: true
+          description: Nullable media ObjectId; syntax only until Media milestone.
+        duration:
+          type: string
+          minLength: 1
+          maxLength: 120
+          nullable: true
+        price:
+          type: integer
+          minimum: 0
+          maximum: 9007199254740991
+          nullable: true
+          description:
+            Integer piastres, not EGP major units. null means unannounced/inquire. Free requires
+            zero; non-free positive or null. No hidden unpublished amount is stored.
+        currency:
+          type: string
+          enum:
+            - EGP
+          default: EGP
+        isFree:
+          type: boolean
+          default: false
+        featured:
+          type: boolean
+          default: false
+        description:
+          type: object
+          additionalProperties: false
+          required:
+            - ar
+          properties:
+            ar:
+              type: string
+              minLength: 1
+              maxLength: 30000
+            en:
+              type: string
+              minLength: 1
+              maxLength: 30000
+          nullable: true
+        curriculum:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/CourseCurriculumUnit'
+          default: []
+        lectureCount:
+          type: integer
+          minimum: 0
+          maximum: 10000
+          default: 0
+        targetAudience:
+          type: array
+          maxItems: 50
+          items:
+            type: string
+            minLength: 1
+            maxLength: 300
+          default: []
+        trainingMode:
+          type: string
+          enum:
+            - online-live
+            - online-recorded
+            - hybrid
+          nullable: true
+        seo:
+          $ref: '#/components/schemas/CourseSeo'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum:
+            - draft
+            - published
+            - archived
+          default: draft
+        publishedAt:
+          type: string
+          format: date-time
+          nullable: true
+    CoursePublicResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - success
+        - message
+        - data
+        - meta
+      properties:
+        success:
+          type: boolean
+          enum:
+            - true
+        message:
+          type: string
+        data:
+          $ref: '#/components/schemas/CoursePublic'
+        meta:
+          type: object
+          nullable: true
+          enum:
+            - null
+    CoursePublicListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - success
+        - message
+        - data
+        - meta
+      properties:
+        success:
+          type: boolean
+          enum:
+            - true
+        message:
+          type: string
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/CourseCard'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+    CourseAdminResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - success
+        - message
+        - data
+        - meta
+      properties:
+        success:
+          type: boolean
+          enum:
+            - true
+        message:
+          type: string
+        data:
+          $ref: '#/components/schemas/CourseAdmin'
+        meta:
+          type: object
+          nullable: true
+          enum:
+            - null
+    CourseAdminListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - success
+        - message
+        - data
+        - meta
+      properties:
+        success:
+          type: boolean
+          enum:
+            - true
+        message:
+          type: string
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/CourseAdmin'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
   responses:
     BadRequest:
       description: Malformed JSON body (INVALID_JSON)
