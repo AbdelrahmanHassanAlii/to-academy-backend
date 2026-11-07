@@ -40,18 +40,17 @@ Paths below include `/api/v1` implicitly. `Session` = authenticated active admin
 | GET | `/auth/me` | Session | `{id,name,email,role,lastLoginAt}`; no-store |
 | GET | `/admin/admins/me` | Session | Current administrator profile only |
 | PATCH | `/admin/admins/me` | Session + CSRF | `{name}` only; no public/admin account creation endpoint |
-| GET | `/admin/overview` | Session | `{totalCourses,publishedCourses,upcomingLectures,totalRegistrations,pendingRegistrations}` |
 | GET | `/categories` | Public | Active only, paginated, sortOrder |
 | GET | `/courses` | Public | Published + active category only; filters `category` slug, `q`, `featured`, `sort`; paginated |
 | GET | `/courses/featured` | Public | Featured published courses; same pagination/filters |
 | GET | `/courses/:slug` | Public | Public course detail or 404 |
 | GET | `/lectures` | Public | Published only; `period=upcoming|past`, related course id, q and sort; paginated |
 | GET | `/lectures/:slug` | Public | Public lecture detail, never meetingUrl |
-| GET | `/articles` | Public | Published nonfuture articles only, paginated, `q` |
+| GET | `/articles` | Public | Published article cards, paginated, q/featured/sort |
 | GET | `/articles/:slug` | Public | Public article and safe author display name |
 | GET | `/settings` | Public | Academy/contact/about/footer/SEO allowlist |
 | POST | `/registrations` | Public + registration rate limit | Discriminated course/lecture registration; 201 receipt only |
-| GET | `/media/:id` | Public only if allowed by visibility and live references | Stream verified image; otherwise 404 |
+| GET | `/media/:id` | Ready public media | Stream verified image; otherwise 404 |
 | GET | `/admin/categories` | Session | All states, paginated |
 | POST | `/admin/categories` | Session + CSRF | Category input -> created record |
 | GET | `/admin/categories/:id` | Session | Editable record |
@@ -68,10 +67,10 @@ Paths below include `/api/v1` implicitly. `Session` = authenticated active admin
 | PATCH | `/admin/lectures/:id` | Session + CSRF | Schedule, edit link, publish/complete/cancel |
 | DELETE | `/admin/lectures/:id` | Session + CSRF | Always soft cancel; retain registrations; omit meetingUrl |
 | GET | `/admin/articles` | Session | Filter status, `q`; paginated |
-| POST | `/admin/articles` | Session + CSRF | Article input; author=current admin |
+| POST | `/admin/articles` | Session + CSRF | Localized article input; author display name |
 | GET | `/admin/articles/:id` | Session | Includes drafts |
 | PATCH | `/admin/articles/:id` | Session + CSRF | Content/SEO/status; server manages publishedAt |
-| DELETE | `/admin/articles/:id` | Session + CSRF | Delete with confirmation |
+| DELETE | `/admin/articles/:id` | Session + CSRF | Soft archive; retain references |
 | GET | `/admin/registrations` | Session | Filter targetType, course id, lecture id, status, q; paginated |
 | GET | `/admin/registrations/export` | Session | Same filters; raw UTF-8 BOM CSV, no-store |
 | GET | `/admin/registrations/:id` | Session | PII and private notes |
@@ -79,10 +78,9 @@ Paths below include `/api/v1` implicitly. `Session` = authenticated active admin
 | GET | `/admin/settings` | Session | Editable singleton; defaults if not created |
 | PATCH | `/admin/settings` | Session + CSRF | Partial allowlisted fields, singleton upsert |
 | GET | `/admin/media` | Session | Metadata list, paginated |
-| POST | `/admin/media` | Session + CSRF | multipart `file`, optional `alt`; private by default |
+| POST | `/admin/media` | Session + CSRF | multipart file, optional visibility; private by default |
 | GET | `/admin/media/:id` | Session | Metadata only |
 | GET | `/admin/media/:id/content` | Session | Authorized raw image stream |
-| PATCH | `/admin/media/:id` | Session + CSRF | `{alt?,visibility?:"private"|"public"}` |
 | DELETE | `/admin/media/:id` | Session + CSRF | Delete unreferenced file and chunks, else 409 |
 
 Register `/admin/registrations/export` before `/:id`. Route ids use ObjectId validation; public detail paths use slug validation. There is no public registration list, meeting-link reveal endpoint, administrator signup, contact inbox, email callback, or Zoom API.
@@ -99,19 +97,19 @@ Input: name (required), slug (optional at creation), description (optional), ima
 
 ### Courses
 
-Implemented in Phase 2.3; see [Courses contract](courses.md) and authoritative OpenAPI0.5.0. Newest approved phase requirements supersede original lecturesCount/trainingMethod and no-featured proposal: use lectureCount, trainingMode (online-live|online-recorded|hybrid), featured and localized title/shortDescription/description.
+Implemented in Phase 2.3; see [Courses contract](courses.md) and authoritative OpenAPI0.6.0. Newest approved phase requirements supersede original lecturesCount/trainingMethod and no-featured proposal: use lectureCount, trainingMode (online-live|online-recorded|hybrid), featured and localized title/shortDescription/description.
 
 Required on creation: title.ar and existing category ObjectId. Optional explicit slug, thumbnail nullable ObjectId, curriculum array of {title,topics:string[]}, lectureCount, duration display string, targetAudience:string[], trainingMode, price nullable integer piastres, currency EGP, isFree, status draft|published|archived, featured, localized SEO. Price null means unannounced, positive means paid, zero requires free. Draft defaults support incomplete content; publish requires summary/description/duration/trainingMode and active category. Server-owned first publishedAt locks slug permanently after initial publication. Draft slug updates are explicit; title edits preserve slug.
 
-Public GET /courses, /courses/featured, /courses/:slug require published status plus active category. Public category filter is a slug; admin filter and assignments use ObjectId. Query supports q literal title search, featured, page/limit and sort newest|oldest|title; admin adds status. Cards project only public summary fields; detail adds curriculum/content/SEO; category={id,name,slug}. Admin receives category id and lifecycle metadata. Thumbnail is syntactically validated only until Media. DELETE /admin/courses/:id archives and returns retained admin DTO, never data:null or physical deletion. All admin reads require session and writes additionally require Origin/CSRF.
+Public GET /courses, /courses/featured, /courses/:slug require published status plus active category. Public category filter is a slug; admin filter and assignments use ObjectId. Query supports q literal title search, featured, page/limit and sort newest|oldest|title; admin adds status. Cards project only public summary fields; detail adds curriculum/content/SEO; category={id,name,slug}. Admin receives category id and lifecycle metadata. Thumbnail must reference a ready Media image with a backing GridFS file; published content requires public visibility. DELETE /admin/courses/:id archives and returns retained admin DTO, never data:null or physical deletion. All admin reads require session and writes additionally require Origin/CSRF.
 
 ### Lectures
 
-Implemented: see [Lectures contract](lectures.md) and OpenAPI 0.5.0. Localized title/shortDescription/description, optional generated stable slug, nullable course reference, required scheduledAt and durationMinutes, nullable capacity/deadline/thumbnail/private HTTPS meetingUrl, status and localized SEO. Explicit-offset ISO dates are stored UTC and returned with Z; display via Africa/Cairo. Published requires complete Arabic descriptions and future schedule. Public list/detail/search never include meetingUrl. Admin list/DELETE also omit it; authenticated detail/create/update may include it. Cancellation/completion hides lectures; DELETE retains records. Capacity edits cannot fall below reserved seats.
+Implemented: see [Lectures contract](lectures.md) and OpenAPI 0.6.0. Localized title/shortDescription/description, optional generated stable slug, nullable course reference, required scheduledAt and durationMinutes, nullable capacity/deadline/thumbnail/private HTTPS meetingUrl, status and localized SEO. Explicit-offset ISO dates are stored UTC and returned with Z; display via Africa/Cairo. Published requires complete Arabic descriptions and future schedule. Public list/detail/search never include meetingUrl. Admin list/DELETE also omit it; authenticated detail/create/update may include it. Cancellation/completion hides lectures; DELETE retains records. Capacity edits cannot fall below reserved seats.
 
 ### Articles
 
-Input: title, optional initial slug, excerpt, content plain text, thumbnail nullable id, status `draft|published`, seo. author determined server-side; publishedAt set on first publication, preserved on edits/republish. Public author is `{name}` only. Publishing requires title/excerpt/content; unpublish removes public visibility. Content length is bounded (propose 50,000 characters); paragraph rendering is accessible and escaped.
+Implemented: localized title/excerpt/content (Arabic required, English optional), optional normalized slug, nullable thumbnail, author display-name string, draft/published/archived, featured and localized SEO. HTML content is bounded to 30000 characters/language and sanitized with a narrow formatting/link allowlist on write and read; other fields are plain text. First publishedAt is server-owned and preserved; published slugs are locked. DELETE archives and retains references. See [Articles](articles.md) for publication, pagination, search and sanitization contracts.
 
 ### Registration
 
@@ -123,9 +121,9 @@ Admin notes max5000; listing omits contact fields/notes/consent, detail includes
 
 ### Settings and media
 
-Settings PATCH: academyName, logo id/null, contact `{phone,email,whatsapp}`, bounded socialLinks of known platforms and HTTPS URLs, address, aboutContent, footerInformation, seoDefaults. No secrets or arbitrary scripts/HTML. Public fields are explicitly projected. A missing settings record yields documented safe display defaults, not private config.
+Implemented Settings PATCH: localized academyName/about/address/footer, logo id/null, contactPhone/whatsappNumber/contactEmail, socialLinks (known platforms, absolute HTTP(S) without credentials) and defaultSeo. Phones normalize to E.164. These are plain-text public academy fields; no credentials accepted. Fixed academy singleton _id, atomic upsert and duplicate-key retry; missing settings return safe display defaults without mutation. See [Settings](settings.md).
 
-Media creation returns id/url/mimeType/size/alt/visibility; public url is only usable when file is public and currently referenced by public content/settings. Upload errors have 400/413/415, never parser stack traces. File payload is multipart, not JSON/base64. Admin metadata listing must not expose GridFS internals. Request limits: 5 MiB/file, one image, verified JPEG/PNG/WebP. Private content streams have no-store and correct verified MIME/nosniff.
+Media creation returns id/originalFilename/filename/mimeType/size/uploadedBy/visibility/createdAt/url; url is null for private images. Explicit visibility=public makes ready images publicly retrievable, including before assignment to content. Visibility is immutable in this MVP. Upload errors return 400/413/415 without parser details. Streamed multipart file bytes go to GridFS, never JSON/Base64 or permanent filesystem storage. Limit 5 MiB, JPEG/PNG/WebP only, signature/container/full-decode validation. Private previews require admin access and no-store. Deletion refuses all course/lecture/article/settings references with 409 until explicitly removed/replaced, including draft/archive records. See [Media](media.md) for transactional guards, failure cleanup, bucket names and retry behavior.
 
 ## Publication/build contract
 

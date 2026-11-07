@@ -1,9 +1,9 @@
 openapi: 3.0.3
 info:
   title: TO Academy API
-  version: 0.5.0
+  version: 0.6.0
   description: TO Academy foundation, administrator sessions, Categories, Courses, Lectures and
-    Registrations. Implemented endpoints only. UTC timestamps; academy timezone Africa/Cairo.
+    Registrations, Articles, Settings and GridFS Media. Implemented endpoints only. UTC timestamps; academy timezone Africa/Cairo.
     Registration writes require MongoDB replica set/Atlas.
 servers:
   - url: /api/v1
@@ -16,6 +16,9 @@ tags:
   - name: Courses
   - name: Lectures
   - name: Registrations
+  - name: Media
+  - name: Articles
+  - name: Settings
 paths:
   /health:
     get:
@@ -2217,6 +2220,1497 @@ paths:
         '415': *a6
         '500': *a7
         '503': *a8
+  /admin/media:
+    get:
+      tags:
+        - Media
+      operationId: listMedia
+      summary: List ready media metadata
+      description: ''
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: query
+          name: page
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100000
+            default: 1
+        - in: query
+          name: limit
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - in: query
+          name: visibility
+          required: false
+          schema:
+            type: string
+            enum:
+              - private
+              - public
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MediaListResponse'
+        '400':
+          description: Validation failed, malformed ID/body or invalid multipart form
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Active administrator session required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Insufficient permission or missing/invalid Origin or CSRF token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Resource not found; private images are indistinguishable from missing images
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description:
+            Media unavailable/referenced, duplicate/locked slug, incomplete reference visibility,
+            or concurrent edit
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: Image exceeds 5 MiB or JSON body exceeds 100 KiB
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description:
+            Unsupported MIME, invalid signature/container, malformed image or wrong request content
+            type
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Unexpected safe internal error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Database unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      tags:
+        - Media
+      operationId: uploadMedia
+      summary: Stream one validated image to GridFS
+      description:
+        Authenticated administrator, trusted Origin and CSRF are checked before parsing the
+        body. One file part named file and optionally one visibility field, in either order. Client
+        filename is sanitized; generated filename, size, MIME validation and uploader are server
+        controlled. Pending files are never served.
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: header
+          name: Origin
+          required: true
+          schema:
+            type: string
+          description: Exact configured allowed Origin.
+        - in: header
+          name: X-CSRF-Token
+          required: true
+          schema:
+            type: string
+            pattern: ^[a-f0-9]{64}$
+          description: Current token from GET /auth/csrf, with the authenticated cookie.
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MediaResponse'
+        '400':
+          description: Validation failed, malformed ID/body or invalid multipart form
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Active administrator session required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Insufficient permission or missing/invalid Origin or CSRF token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Resource not found; private images are indistinguishable from missing images
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description:
+            Media unavailable/referenced, duplicate/locked slug, incomplete reference visibility,
+            or concurrent edit
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: Image exceeds 5 MiB or JSON body exceeds 100 KiB
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description:
+            Unsupported MIME, invalid signature/container, malformed image or wrong request content
+            type
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: At most 30 uploads per IP in 15 minutes
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Unexpected safe internal error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Database unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/MediaUpload'
+            encoding:
+              file:
+                contentType: image/jpeg, image/png, image/webp
+  /admin/media/{id}:
+    get:
+      tags:
+        - Media
+      operationId: getMedia
+      summary: Retrieve administrator media metadata
+      description: ''
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            pattern: ^[a-fA-F0-9]{24}$
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MediaResponse'
+        '400':
+          description: Validation failed, malformed ID/body or invalid multipart form
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Active administrator session required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Insufficient permission or missing/invalid Origin or CSRF token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Resource not found; private images are indistinguishable from missing images
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description:
+            Media unavailable/referenced, duplicate/locked slug, incomplete reference visibility,
+            or concurrent edit
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: Image exceeds 5 MiB or JSON body exceeds 100 KiB
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description:
+            Unsupported MIME, invalid signature/container, malformed image or wrong request content
+            type
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Unexpected safe internal error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Database unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      tags:
+        - Media
+      operationId: deleteMedia
+      summary: Delete an unreferenced image
+      description:
+        409 MEDIA_REFERENCED until every course, lecture, article and settings reference is
+        explicitly removed or replaced, including drafts/archived/cancelled records. Transactional
+        media guards serialize assignment/deletion. Binary deletion is retryable; DELETE also resumes
+        a deleting record after infrastructure failure.
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            pattern: ^[a-fA-F0-9]{24}$
+        - in: header
+          name: Origin
+          required: true
+          schema:
+            type: string
+          description: Exact configured allowed Origin.
+        - in: header
+          name: X-CSRF-Token
+          required: true
+          schema:
+            type: string
+            pattern: ^[a-f0-9]{64}$
+          description: Current token from GET /auth/csrf, with the authenticated cookie.
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MediaDeletedResponse'
+        '400':
+          description: Validation failed, malformed ID/body or invalid multipart form
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Active administrator session required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Insufficient permission or missing/invalid Origin or CSRF token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Resource not found; private images are indistinguishable from missing images
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description:
+            Media unavailable/referenced, duplicate/locked slug, incomplete reference visibility,
+            or concurrent edit
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: Image exceeds 5 MiB or JSON body exceeds 100 KiB
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description:
+            Unsupported MIME, invalid signature/container, malformed image or wrong request content
+            type
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: At most 30 uploads per IP in 15 minutes
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Unexpected safe internal error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Database unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /media/{id}:
+    get:
+      tags:
+        - Media
+      operationId: downloadPublicMedia
+      summary: Stream a public image
+      description:
+        'Only ready public images are served. Private/pending/deleting/missing binary files
+        return 404. Cache-Control: public, max-age=0, must-revalidate; no immutable caching after
+        deletion. No session created.'
+      security: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            pattern: ^[a-fA-F0-9]{24}$
+      responses:
+        '200':
+          description: Streamed original image bytes
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+            Content-Length:
+              schema:
+                type: integer
+            Content-Disposition:
+              schema:
+                type: string
+              description: inline with server-generated filename
+            X-Content-Type-Options:
+              schema:
+                type: string
+                enum:
+                  - nosniff
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+            image/png:
+              schema:
+                type: string
+                format: binary
+            image/webp:
+              schema:
+                type: string
+                format: binary
+        '400':
+          description: Validation failed, malformed ID/body or invalid multipart form
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Resource not found; private images are indistinguishable from missing images
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description:
+            Media unavailable/referenced, duplicate/locked slug, incomplete reference visibility,
+            or concurrent edit
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: Image exceeds 5 MiB or JSON body exceeds 100 KiB
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description:
+            Unsupported MIME, invalid signature/container, malformed image or wrong request content
+            type
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Unexpected safe internal error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Database unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /admin/media/{id}/content:
+    get:
+      tags:
+        - Media
+      operationId: previewPrivateMedia
+      summary: Stream administrator image preview
+      description: 'Authenticated preview for public or private ready images. Cache-Control: private, no-store.'
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            pattern: ^[a-fA-F0-9]{24}$
+      responses:
+        '200':
+          description: Streamed original image bytes
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+            Content-Length:
+              schema:
+                type: integer
+            Content-Disposition:
+              schema:
+                type: string
+              description: inline with server-generated filename
+            X-Content-Type-Options:
+              schema:
+                type: string
+                enum:
+                  - nosniff
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+            image/png:
+              schema:
+                type: string
+                format: binary
+            image/webp:
+              schema:
+                type: string
+                format: binary
+        '400':
+          description: Validation failed, malformed ID/body or invalid multipart form
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Active administrator session required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Insufficient permission or missing/invalid Origin or CSRF token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Resource not found; private images are indistinguishable from missing images
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description:
+            Media unavailable/referenced, duplicate/locked slug, incomplete reference visibility,
+            or concurrent edit
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: Image exceeds 5 MiB or JSON body exceeds 100 KiB
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description:
+            Unsupported MIME, invalid signature/container, malformed image or wrong request content
+            type
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Unexpected safe internal error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Database unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /articles:
+    get:
+      tags:
+        - Articles
+      operationId: listPublishedArticles
+      summary: List published article cards
+      description: Published only. Capped pagination, escaped title/excerpt search, featured filter,
+        stable sorting. Content HTML is omitted from public cards. featured reserved as a slug.
+      security: []
+      parameters:
+        - in: query
+          name: page
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100000
+            default: 1
+        - in: query
+          name: limit
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 12
+        - in: query
+          name: q
+          required: false
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 100
+            description: Literal case-insensitive title/excerpt search
+        - in: query
+          name: featured
+          required: false
+          schema:
+            type: boolean
+        - in: query
+          name: sort
+          required: false
+          schema:
+            type: string
+            enum:
+              - newest
+              - oldest
+              - title
+            default: newest
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArticlePublicListResponse'
+        '400':
+          description: Validation failed, malformed ID/body or invalid multipart form
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Resource not found; private images are indistinguishable from missing images
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description:
+            Media unavailable/referenced, duplicate/locked slug, incomplete reference visibility,
+            or concurrent edit
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: Image exceeds 5 MiB or JSON body exceeds 100 KiB
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description:
+            Unsupported MIME, invalid signature/container, malformed image or wrong request content
+            type
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Unexpected safe internal error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Database unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /articles/{slug}:
+    get:
+      tags:
+        - Articles
+      operationId: getPublishedArticle
+      summary: Read published article with sanitized HTML
+      description: ''
+      security: []
+      parameters:
+        - in: path
+          name: slug
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 120
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArticlePublicResponse'
+        '400':
+          description: Validation failed, malformed ID/body or invalid multipart form
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Resource not found; private images are indistinguishable from missing images
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description:
+            Media unavailable/referenced, duplicate/locked slug, incomplete reference visibility,
+            or concurrent edit
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: Image exceeds 5 MiB or JSON body exceeds 100 KiB
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description:
+            Unsupported MIME, invalid signature/container, malformed image or wrong request content
+            type
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Unexpected safe internal error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Database unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /admin/articles:
+    get:
+      tags:
+        - Articles
+      operationId: listAdminArticles
+      summary: List editable articles across statuses
+      description: ''
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: query
+          name: page
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100000
+            default: 1
+        - in: query
+          name: limit
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 12
+        - in: query
+          name: q
+          required: false
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 100
+            description: Literal case-insensitive title/excerpt search
+        - in: query
+          name: featured
+          required: false
+          schema:
+            type: boolean
+        - in: query
+          name: sort
+          required: false
+          schema:
+            type: string
+            enum:
+              - newest
+              - oldest
+              - title
+            default: newest
+        - in: query
+          name: status
+          required: false
+          schema:
+            type: string
+            enum:
+              - draft
+              - published
+              - archived
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArticleAdminListResponse'
+        '400':
+          description: Validation failed, malformed ID/body or invalid multipart form
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Active administrator session required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Insufficient permission or missing/invalid Origin or CSRF token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Resource not found; private images are indistinguishable from missing images
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description:
+            Media unavailable/referenced, duplicate/locked slug, incomplete reference visibility,
+            or concurrent edit
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: Image exceeds 5 MiB or JSON body exceeds 100 KiB
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description:
+            Unsupported MIME, invalid signature/container, malformed image or wrong request content
+            type
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Unexpected safe internal error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Database unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      tags:
+        - Articles
+      operationId: createArticle
+      summary: Create draft or published article
+      description:
+        Defaults to draft. Publishing requires Arabic excerpt and nonempty sanitized Arabic
+        HTML. Optional thumbnail must exist and be public on publication. Unique normalized slug,
+        bounded auto suffix allocation. Author is a display name.
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: header
+          name: Origin
+          required: true
+          schema:
+            type: string
+          description: Exact configured allowed Origin.
+        - in: header
+          name: X-CSRF-Token
+          required: true
+          schema:
+            type: string
+            pattern: ^[a-f0-9]{64}$
+          description: Current token from GET /auth/csrf, with the authenticated cookie.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ArticleCreateRequest'
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArticleAdminResponse'
+        '400':
+          description: Validation failed, malformed ID/body or invalid multipart form
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Active administrator session required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Insufficient permission or missing/invalid Origin or CSRF token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Resource not found; private images are indistinguishable from missing images
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description:
+            Media unavailable/referenced, duplicate/locked slug, incomplete reference visibility,
+            or concurrent edit
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: Image exceeds 5 MiB or JSON body exceeds 100 KiB
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description:
+            Unsupported MIME, invalid signature/container, malformed image or wrong request content
+            type
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Unexpected safe internal error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Database unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /admin/articles/{id}:
+    get:
+      tags:
+        - Articles
+      operationId: getAdminArticle
+      summary: Read editable article
+      description: ''
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            pattern: ^[a-fA-F0-9]{24}$
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArticleAdminResponse'
+        '400':
+          description: Validation failed, malformed ID/body or invalid multipart form
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Active administrator session required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Insufficient permission or missing/invalid Origin or CSRF token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Resource not found; private images are indistinguishable from missing images
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description:
+            Media unavailable/referenced, duplicate/locked slug, incomplete reference visibility,
+            or concurrent edit
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: Image exceeds 5 MiB or JSON body exceeds 100 KiB
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description:
+            Unsupported MIME, invalid signature/container, malformed image or wrong request content
+            type
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Unexpected safe internal error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Database unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    patch:
+      tags:
+        - Articles
+      operationId: updateArticle
+      summary: Edit, publish, unpublish or archive article
+      description: First publishedAt is server-owned and preserved after unpublishing, archiving or
+        republishing. A previously published slug is locked. Optimistic concurrency returns 409 on
+        conflicting edits. Sanitization on write and read.
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            pattern: ^[a-fA-F0-9]{24}$
+        - in: header
+          name: Origin
+          required: true
+          schema:
+            type: string
+          description: Exact configured allowed Origin.
+        - in: header
+          name: X-CSRF-Token
+          required: true
+          schema:
+            type: string
+            pattern: ^[a-f0-9]{64}$
+          description: Current token from GET /auth/csrf, with the authenticated cookie.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ArticleUpdateRequest'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArticleAdminResponse'
+        '400':
+          description: Validation failed, malformed ID/body or invalid multipart form
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Active administrator session required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Insufficient permission or missing/invalid Origin or CSRF token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Resource not found; private images are indistinguishable from missing images
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description:
+            Media unavailable/referenced, duplicate/locked slug, incomplete reference visibility,
+            or concurrent edit
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: Image exceeds 5 MiB or JSON body exceeds 100 KiB
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description:
+            Unsupported MIME, invalid signature/container, malformed image or wrong request content
+            type
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Unexpected safe internal error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Database unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      tags:
+        - Articles
+      operationId: archiveArticle
+      summary: Soft-archive an article
+      description:
+        Retains document, first publication date, slug and thumbnail reference. Remove/replace
+        the thumbnail explicitly before deleting its media.
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            pattern: ^[a-fA-F0-9]{24}$
+        - in: header
+          name: Origin
+          required: true
+          schema:
+            type: string
+          description: Exact configured allowed Origin.
+        - in: header
+          name: X-CSRF-Token
+          required: true
+          schema:
+            type: string
+            pattern: ^[a-f0-9]{64}$
+          description: Current token from GET /auth/csrf, with the authenticated cookie.
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArticleAdminResponse'
+        '400':
+          description: Validation failed, malformed ID/body or invalid multipart form
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Active administrator session required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Insufficient permission or missing/invalid Origin or CSRF token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Resource not found; private images are indistinguishable from missing images
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description:
+            Media unavailable/referenced, duplicate/locked slug, incomplete reference visibility,
+            or concurrent edit
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: Image exceeds 5 MiB or JSON body exceeds 100 KiB
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description:
+            Unsupported MIME, invalid signature/container, malformed image or wrong request content
+            type
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Unexpected safe internal error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Database unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /settings:
+    get:
+      tags:
+        - Settings
+      operationId: getPublicSettings
+      summary: Read approved academy information
+      description:
+        Explicit public field allowlist. Safe defaults before initialization; GET never creates
+        a document or session. No internal IDs, timestamps or private configuration.
+      security: []
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SettingsResponse'
+        '400':
+          description: Validation failed, malformed ID/body or invalid multipart form
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Resource not found; private images are indistinguishable from missing images
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description:
+            Media unavailable/referenced, duplicate/locked slug, incomplete reference visibility,
+            or concurrent edit
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: Image exceeds 5 MiB or JSON body exceeds 100 KiB
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description:
+            Unsupported MIME, invalid signature/container, malformed image or wrong request content
+            type
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Unexpected safe internal error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Database unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /admin/settings:
+    get:
+      tags:
+        - Settings
+      operationId: getAdminSettings
+      summary: Read editable academy settings
+      description: ''
+      security:
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SettingsResponse'
+        '400':
+          description: Validation failed, malformed ID/body or invalid multipart form
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Active administrator session required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Insufficient permission or missing/invalid Origin or CSRF token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Resource not found; private images are indistinguishable from missing images
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description:
+            Media unavailable/referenced, duplicate/locked slug, incomplete reference visibility,
+            or concurrent edit
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: Image exceeds 5 MiB or JSON body exceeds 100 KiB
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description:
+            Unsupported MIME, invalid signature/container, malformed image or wrong request content
+            type
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Unexpected safe internal error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Database unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    patch:
+      tags:
+        - Settings
+      operationId: updateSettings
+      summary: Atomically initialize or update singleton academy settings
+      description:
+        Fixed academy singleton _id and duplicate-key retry prevent conflicting initialization.
+        Logo must reference a ready public image. No WhatsApp API integration. All fields returned are
+        public-safe.
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: header
+          name: Origin
+          required: true
+          schema:
+            type: string
+          description: Exact configured allowed Origin.
+        - in: header
+          name: X-CSRF-Token
+          required: true
+          schema:
+            type: string
+            pattern: ^[a-f0-9]{64}$
+          description: Current token from GET /auth/csrf, with the authenticated cookie.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SettingsUpdateRequest'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SettingsResponse'
+        '400':
+          description: Validation failed, malformed ID/body or invalid multipart form
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Active administrator session required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Insufficient permission or missing/invalid Origin or CSRF token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Resource not found; private images are indistinguishable from missing images
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description:
+            Media unavailable/referenced, duplicate/locked slug, incomplete reference visibility,
+            or concurrent edit
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: Image exceeds 5 MiB or JSON body exceeds 100 KiB
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description:
+            Unsupported MIME, invalid signature/container, malformed image or wrong request content
+            type
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Unexpected safe internal error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Database unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 components:
   schemas:
     SuccessEnvelope:
@@ -2704,7 +4198,7 @@ components:
           type: string
           pattern: ^[a-fA-F0-9]{24}$
           nullable: true
-          description: Nullable media ObjectId; syntax only until Media milestone.
+          description: Nullable Media ObjectId; existing ready image required, public for published content.
         curriculum:
           type: array
           maxItems: 100
@@ -2788,7 +4282,7 @@ components:
           type: string
           pattern: ^[a-fA-F0-9]{24}$
           nullable: true
-          description: Nullable media ObjectId; syntax only until Media milestone.
+          description: Nullable Media ObjectId; existing ready image required, public for published content.
         curriculum:
           type: array
           maxItems: 100
@@ -2889,7 +4383,7 @@ components:
           type: string
           pattern: ^[a-fA-F0-9]{24}$
           nullable: true
-          description: Nullable media ObjectId; syntax only until Media milestone.
+          description: Nullable Media ObjectId; existing ready image required, public for published content.
         duration:
           type: string
           minLength: 1
@@ -2972,7 +4466,7 @@ components:
           type: string
           pattern: ^[a-fA-F0-9]{24}$
           nullable: true
-          description: Nullable media ObjectId; syntax only until Media milestone.
+          description: Nullable Media ObjectId; existing ready image required, public for published content.
         duration:
           type: string
           minLength: 1
@@ -3107,7 +4601,7 @@ components:
           type: string
           pattern: ^[a-fA-F0-9]{24}$
           nullable: true
-          description: Nullable media ObjectId; syntax only until Media milestone.
+          description: Nullable Media ObjectId; existing ready image required, public for published content.
         duration:
           type: string
           minLength: 1
@@ -3829,6 +5323,1142 @@ components:
           type: string
         data:
           $ref: '#/components/schemas/LectureAdminListItem'
+        meta:
+          type: object
+          nullable: true
+          example: null
+    MediaMetadata:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - originalFilename
+        - filename
+        - mimeType
+        - size
+        - uploadedBy
+        - visibility
+        - createdAt
+        - url
+      properties:
+        id:
+          type: string
+          pattern: ^[a-fA-F0-9]{24}$
+        originalFilename:
+          type: string
+          maxLength: 200
+        filename:
+          type: string
+        mimeType:
+          type: string
+          enum:
+            - image/jpeg
+            - image/png
+            - image/webp
+        size:
+          type: integer
+          minimum: 1
+          maximum: 5242880
+        uploadedBy:
+          type: string
+          pattern: ^[a-fA-F0-9]{24}$
+        visibility:
+          type: string
+          enum:
+            - private
+            - public
+        createdAt:
+          type: string
+          format: date-time
+        url:
+          type: string
+          nullable: true
+      example:
+        id: 507f1f77bcf86cd799439011
+        originalFilename: logo.png
+        filename: d515a017-d70b-4a9a-bb29-6d073191325d.png
+        mimeType: image/png
+        size: 96
+        uploadedBy: 507f1f77bcf86cd799439012
+        visibility: public
+        createdAt: 2026-11-08T00:00:00.000Z
+        url: /api/v1/media/507f1f77bcf86cd799439011
+    MediaResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - success
+        - message
+        - data
+        - meta
+      properties:
+        success:
+          type: boolean
+          enum:
+            - true
+        message:
+          type: string
+        data:
+          $ref: '#/components/schemas/MediaMetadata'
+        meta:
+          type: object
+          nullable: true
+          example: null
+    MediaListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - success
+        - message
+        - data
+        - meta
+      properties:
+        success:
+          type: boolean
+          enum:
+            - true
+        message:
+          type: string
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/MediaMetadata'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+    MediaDeletedResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - success
+        - message
+        - data
+        - meta
+      properties:
+        success:
+          type: boolean
+          enum:
+            - true
+        message:
+          type: string
+        data:
+          type: object
+          additionalProperties: false
+          required:
+            - id
+          properties:
+            id:
+              type: string
+              pattern: ^[a-fA-F0-9]{24}$
+        meta:
+          type: object
+          nullable: true
+          example: null
+    MediaUpload:
+      type: object
+      additionalProperties: false
+      required:
+        - file
+      properties:
+        file:
+          type: string
+          format: binary
+          description:
+            One static JPEG, PNG or WebP, maximum 5242880 bytes. Actual signature/container and
+            full decode validated, up to 16 million pixels. SVG/animations rejected.
+        visibility:
+          type: string
+          enum:
+            - private
+            - public
+          default: private
+          description:
+            Immutable MVP access class. Set public for website images. Upload a replacement to
+            change visibility.
+    ArticleCreateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - title
+      properties:
+        title:
+          type: object
+          additionalProperties: false
+          required:
+            - ar
+          properties:
+            ar:
+              type: string
+              minLength: 1
+              maxLength: 200
+            en:
+              type: string
+              minLength: 1
+              maxLength: 200
+        slug:
+          type: string
+          minLength: 1
+          maxLength: 120
+          description:
+            NFKC/lowercase/hyphen normalized; Unicode letters/numbers/marks only. featured
+            reserved. Auto-derived from English title if available otherwise Arabic, punctuation
+            removed; suffix -2, -3 etc on generated collisions. Explicit duplicates409.
+        excerpt:
+          type: object
+          additionalProperties: false
+          required:
+            - ar
+          properties:
+            ar:
+              type: string
+              minLength: 1
+              maxLength: 600
+            en:
+              type: string
+              minLength: 1
+              maxLength: 600
+        content:
+          type: object
+          additionalProperties: false
+          required:
+            - ar
+          properties:
+            ar:
+              type: string
+              minLength: 1
+              maxLength: 30000
+            en:
+              type: string
+              minLength: 1
+              maxLength: 30000
+          description: Sanitized HTML, Arabic required when supplied. Allowlisted
+            paragraph/headings/list/emphasis/link/code formatting. No scripts, SVG, images, event
+            handlers, styles, frames or dangerous URL schemes. Frontends must insert only this sanitized
+            field as HTML and render other text fields escaped.
+        thumbnail:
+          type: string
+          pattern: ^[a-fA-F0-9]{24}$
+          description:
+            Existing ready image. Published content and settings require public visibility.
+            Remove/replace references before deleting media.
+          nullable: true
+        author:
+          type: string
+          minLength: 1
+          maxLength: 200
+          default: فريق الأكاديمية
+        status:
+          type: string
+          enum:
+            - draft
+            - published
+            - archived
+        featured:
+          type: boolean
+          default: false
+        seo:
+          type: object
+          additionalProperties: false
+          properties:
+            title:
+              type: object
+              additionalProperties: false
+              required:
+                - ar
+              properties:
+                ar:
+                  type: string
+                  minLength: 1
+                  maxLength: 200
+                en:
+                  type: string
+                  minLength: 1
+                  maxLength: 200
+            description:
+              type: object
+              additionalProperties: false
+              required:
+                - ar
+              properties:
+                ar:
+                  type: string
+                  minLength: 1
+                  maxLength: 600
+                en:
+                  type: string
+                  minLength: 1
+                  maxLength: 600
+    ArticleUpdateRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        title:
+          type: object
+          additionalProperties: false
+          required:
+            - ar
+          properties:
+            ar:
+              type: string
+              minLength: 1
+              maxLength: 200
+            en:
+              type: string
+              minLength: 1
+              maxLength: 200
+        slug:
+          type: string
+          minLength: 1
+          maxLength: 120
+          description:
+            NFKC/lowercase/hyphen normalized; Unicode letters/numbers/marks only. featured
+            reserved. Auto-derived from English title if available otherwise Arabic, punctuation
+            removed; suffix -2, -3 etc on generated collisions. Explicit duplicates409.
+        excerpt:
+          type: object
+          additionalProperties: false
+          required:
+            - ar
+          properties:
+            ar:
+              type: string
+              minLength: 1
+              maxLength: 600
+            en:
+              type: string
+              minLength: 1
+              maxLength: 600
+        content:
+          type: object
+          additionalProperties: false
+          required:
+            - ar
+          properties:
+            ar:
+              type: string
+              minLength: 1
+              maxLength: 30000
+            en:
+              type: string
+              minLength: 1
+              maxLength: 30000
+          description: Sanitized HTML, Arabic required when supplied. Allowlisted
+            paragraph/headings/list/emphasis/link/code formatting. No scripts, SVG, images, event
+            handlers, styles, frames or dangerous URL schemes. Frontends must insert only this sanitized
+            field as HTML and render other text fields escaped.
+        thumbnail:
+          type: string
+          pattern: ^[a-fA-F0-9]{24}$
+          description:
+            Existing ready image. Published content and settings require public visibility.
+            Remove/replace references before deleting media.
+          nullable: true
+        author:
+          type: string
+          minLength: 1
+          maxLength: 200
+          default: فريق الأكاديمية
+        status:
+          type: string
+          enum:
+            - draft
+            - published
+            - archived
+        featured:
+          type: boolean
+          default: false
+        seo:
+          type: object
+          additionalProperties: false
+          properties:
+            title:
+              type: object
+              additionalProperties: false
+              required:
+                - ar
+              properties:
+                ar:
+                  type: string
+                  minLength: 1
+                  maxLength: 200
+                en:
+                  type: string
+                  minLength: 1
+                  maxLength: 200
+            description:
+              type: object
+              additionalProperties: false
+              required:
+                - ar
+              properties:
+                ar:
+                  type: string
+                  minLength: 1
+                  maxLength: 600
+                en:
+                  type: string
+                  minLength: 1
+                  maxLength: 600
+      minProperties: 1
+    ArticleCard:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - title
+        - slug
+        - excerpt
+        - thumbnail
+        - author
+        - featured
+        - publishedAt
+      properties:
+        id:
+          type: string
+          pattern: ^[a-fA-F0-9]{24}$
+        title:
+          type: object
+          additionalProperties: false
+          required:
+            - ar
+          properties:
+            ar:
+              type: string
+              minLength: 1
+              maxLength: 200
+            en:
+              type: string
+              minLength: 1
+              maxLength: 200
+        slug:
+          type: string
+          maxLength: 120
+        excerpt:
+          type: object
+          additionalProperties: false
+          required:
+            - ar
+          properties:
+            ar:
+              type: string
+              minLength: 1
+              maxLength: 600
+            en:
+              type: string
+              minLength: 1
+              maxLength: 600
+          nullable: true
+        thumbnail:
+          type: string
+          pattern: ^[a-fA-F0-9]{24}$
+          description:
+            Existing ready image. Published content and settings require public visibility.
+            Remove/replace references before deleting media.
+          nullable: true
+        author:
+          type: string
+          maxLength: 200
+        featured:
+          type: boolean
+        publishedAt:
+          type: string
+          format: date-time
+          nullable: true
+    ArticlePublic:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - title
+        - slug
+        - excerpt
+        - thumbnail
+        - author
+        - featured
+        - publishedAt
+        - content
+        - seo
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          pattern: ^[a-fA-F0-9]{24}$
+        title:
+          type: object
+          additionalProperties: false
+          required:
+            - ar
+          properties:
+            ar:
+              type: string
+              minLength: 1
+              maxLength: 200
+            en:
+              type: string
+              minLength: 1
+              maxLength: 200
+        slug:
+          type: string
+          maxLength: 120
+        excerpt:
+          type: object
+          additionalProperties: false
+          required:
+            - ar
+          properties:
+            ar:
+              type: string
+              minLength: 1
+              maxLength: 600
+            en:
+              type: string
+              minLength: 1
+              maxLength: 600
+          nullable: true
+        thumbnail:
+          type: string
+          pattern: ^[a-fA-F0-9]{24}$
+          description:
+            Existing ready image. Published content and settings require public visibility.
+            Remove/replace references before deleting media.
+          nullable: true
+        author:
+          type: string
+          maxLength: 200
+        featured:
+          type: boolean
+        publishedAt:
+          type: string
+          format: date-time
+          nullable: true
+        content:
+          type: object
+          additionalProperties: false
+          required:
+            - ar
+          properties:
+            ar:
+              type: string
+              minLength: 1
+              maxLength: 30000
+            en:
+              type: string
+              minLength: 1
+              maxLength: 30000
+          nullable: true
+        seo:
+          type: object
+          additionalProperties: false
+          properties:
+            title:
+              type: object
+              additionalProperties: false
+              required:
+                - ar
+              properties:
+                ar:
+                  type: string
+                  minLength: 1
+                  maxLength: 200
+                en:
+                  type: string
+                  minLength: 1
+                  maxLength: 200
+            description:
+              type: object
+              additionalProperties: false
+              required:
+                - ar
+              properties:
+                ar:
+                  type: string
+                  minLength: 1
+                  maxLength: 600
+                en:
+                  type: string
+                  minLength: 1
+                  maxLength: 600
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      example:
+        id: 507f1f77bcf86cd799439011
+        title:
+          ar: نصائح للمقابلات
+        slug: interview-tips
+        excerpt:
+          ar: استعد للمقابلة
+        thumbnail: null
+        author: فريق الأكاديمية
+        featured: false
+        publishedAt: 2026-11-08T00:00:00.000Z
+        content:
+          ar: <p>ابدأ بالتحضير.</p>
+        seo: {}
+        createdAt: 2026-11-08T00:00:00.000Z
+        updatedAt: 2026-11-08T00:00:00.000Z
+    ArticleAdmin:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - title
+        - slug
+        - excerpt
+        - thumbnail
+        - author
+        - featured
+        - publishedAt
+        - content
+        - seo
+        - createdAt
+        - updatedAt
+        - status
+      properties:
+        id:
+          type: string
+          pattern: ^[a-fA-F0-9]{24}$
+        title:
+          type: object
+          additionalProperties: false
+          required:
+            - ar
+          properties:
+            ar:
+              type: string
+              minLength: 1
+              maxLength: 200
+            en:
+              type: string
+              minLength: 1
+              maxLength: 200
+        slug:
+          type: string
+          maxLength: 120
+        excerpt:
+          type: object
+          additionalProperties: false
+          required:
+            - ar
+          properties:
+            ar:
+              type: string
+              minLength: 1
+              maxLength: 600
+            en:
+              type: string
+              minLength: 1
+              maxLength: 600
+          nullable: true
+        thumbnail:
+          type: string
+          pattern: ^[a-fA-F0-9]{24}$
+          description:
+            Existing ready image. Published content and settings require public visibility.
+            Remove/replace references before deleting media.
+          nullable: true
+        author:
+          type: string
+          maxLength: 200
+        featured:
+          type: boolean
+        publishedAt:
+          type: string
+          format: date-time
+          nullable: true
+        content:
+          type: object
+          additionalProperties: false
+          required:
+            - ar
+          properties:
+            ar:
+              type: string
+              minLength: 1
+              maxLength: 30000
+            en:
+              type: string
+              minLength: 1
+              maxLength: 30000
+          nullable: true
+        seo:
+          type: object
+          additionalProperties: false
+          properties:
+            title:
+              type: object
+              additionalProperties: false
+              required:
+                - ar
+              properties:
+                ar:
+                  type: string
+                  minLength: 1
+                  maxLength: 200
+                en:
+                  type: string
+                  minLength: 1
+                  maxLength: 200
+            description:
+              type: object
+              additionalProperties: false
+              required:
+                - ar
+              properties:
+                ar:
+                  type: string
+                  minLength: 1
+                  maxLength: 600
+                en:
+                  type: string
+                  minLength: 1
+                  maxLength: 600
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum:
+            - draft
+            - published
+            - archived
+    ArticlePublicResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - success
+        - message
+        - data
+        - meta
+      properties:
+        success:
+          type: boolean
+          enum:
+            - true
+        message:
+          type: string
+        data:
+          $ref: '#/components/schemas/ArticlePublic'
+        meta:
+          type: object
+          nullable: true
+          example: null
+    ArticleAdminResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - success
+        - message
+        - data
+        - meta
+      properties:
+        success:
+          type: boolean
+          enum:
+            - true
+        message:
+          type: string
+        data:
+          $ref: '#/components/schemas/ArticleAdmin'
+        meta:
+          type: object
+          nullable: true
+          example: null
+    ArticlePublicListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - success
+        - message
+        - data
+        - meta
+      properties:
+        success:
+          type: boolean
+          enum:
+            - true
+        message:
+          type: string
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ArticleCard'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+    ArticleAdminListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - success
+        - message
+        - data
+        - meta
+      properties:
+        success:
+          type: boolean
+          enum:
+            - true
+        message:
+          type: string
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ArticleAdmin'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+    AcademySettings:
+      type: object
+      additionalProperties: false
+      required:
+        - academyName
+        - about
+        - logo
+        - contactPhone
+        - whatsappNumber
+        - contactEmail
+        - address
+        - socialLinks
+        - footer
+        - defaultSeo
+      properties:
+        academyName:
+          type: object
+          additionalProperties: false
+          required:
+            - ar
+          properties:
+            ar:
+              type: string
+              minLength: 1
+              maxLength: 200
+            en:
+              type: string
+              minLength: 1
+              maxLength: 200
+        about:
+          type: object
+          additionalProperties: false
+          required:
+            - ar
+          properties:
+            ar:
+              type: string
+              minLength: 1
+              maxLength: 10000
+            en:
+              type: string
+              minLength: 1
+              maxLength: 10000
+          nullable: true
+        logo:
+          type: string
+          pattern: ^[a-fA-F0-9]{24}$
+          description:
+            Existing ready image. Published content and settings require public visibility.
+            Remove/replace references before deleting media.
+          nullable: true
+        contactPhone:
+          type: string
+          description: Valid phone number normalized to E.164; accepts Egyptian national numbers and
+            Arabic/Persian digits.
+          nullable: true
+        whatsappNumber:
+          type: string
+          description: Contact number only; no API integration or messaging
+          nullable: true
+        contactEmail:
+          type: string
+          format: email
+          maxLength: 254
+          nullable: true
+        address:
+          type: object
+          additionalProperties: false
+          required:
+            - ar
+          properties:
+            ar:
+              type: string
+              minLength: 1
+              maxLength: 1000
+            en:
+              type: string
+              minLength: 1
+              maxLength: 1000
+          nullable: true
+        socialLinks:
+          type: object
+          additionalProperties: false
+          properties:
+            facebook:
+              type: string
+              format: uri
+              maxLength: 2048
+              description: Absolute HTTP(S) URL without credentials
+            instagram:
+              type: string
+              format: uri
+              maxLength: 2048
+              description: Absolute HTTP(S) URL without credentials
+            linkedin:
+              type: string
+              format: uri
+              maxLength: 2048
+              description: Absolute HTTP(S) URL without credentials
+            youtube:
+              type: string
+              format: uri
+              maxLength: 2048
+              description: Absolute HTTP(S) URL without credentials
+            tiktok:
+              type: string
+              format: uri
+              maxLength: 2048
+              description: Absolute HTTP(S) URL without credentials
+            x:
+              type: string
+              format: uri
+              maxLength: 2048
+              description: Absolute HTTP(S) URL without credentials
+        footer:
+          type: object
+          additionalProperties: false
+          required:
+            - ar
+          properties:
+            ar:
+              type: string
+              minLength: 1
+              maxLength: 1000
+            en:
+              type: string
+              minLength: 1
+              maxLength: 1000
+          nullable: true
+        defaultSeo:
+          type: object
+          additionalProperties: false
+          properties:
+            title:
+              type: object
+              additionalProperties: false
+              required:
+                - ar
+              properties:
+                ar:
+                  type: string
+                  minLength: 1
+                  maxLength: 200
+                en:
+                  type: string
+                  minLength: 1
+                  maxLength: 200
+            description:
+              type: object
+              additionalProperties: false
+              required:
+                - ar
+              properties:
+                ar:
+                  type: string
+                  minLength: 1
+                  maxLength: 600
+                en:
+                  type: string
+                  minLength: 1
+                  maxLength: 600
+      example:
+        academyName:
+          ar: أكاديمية TO
+          en: TO Academy
+        about: null
+        logo: null
+        contactPhone: null
+        whatsappNumber: null
+        contactEmail: null
+        address: null
+        socialLinks: {}
+        footer: null
+        defaultSeo: {}
+    SettingsUpdateRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        academyName:
+          type: object
+          additionalProperties: false
+          required:
+            - ar
+          properties:
+            ar:
+              type: string
+              minLength: 1
+              maxLength: 200
+            en:
+              type: string
+              minLength: 1
+              maxLength: 200
+        about:
+          type: object
+          additionalProperties: false
+          required:
+            - ar
+          properties:
+            ar:
+              type: string
+              minLength: 1
+              maxLength: 10000
+            en:
+              type: string
+              minLength: 1
+              maxLength: 10000
+          nullable: true
+        logo:
+          type: string
+          pattern: ^[a-fA-F0-9]{24}$
+          description:
+            Existing ready image. Published content and settings require public visibility.
+            Remove/replace references before deleting media.
+          nullable: true
+        contactPhone:
+          type: string
+          description: Valid phone number normalized to E.164; accepts Egyptian national numbers and
+            Arabic/Persian digits.
+          nullable: true
+        whatsappNumber:
+          type: string
+          description: Contact number only; no API integration or messaging
+          nullable: true
+        contactEmail:
+          type: string
+          format: email
+          maxLength: 254
+          nullable: true
+        address:
+          type: object
+          additionalProperties: false
+          required:
+            - ar
+          properties:
+            ar:
+              type: string
+              minLength: 1
+              maxLength: 1000
+            en:
+              type: string
+              minLength: 1
+              maxLength: 1000
+          nullable: true
+        socialLinks:
+          type: object
+          additionalProperties: false
+          properties:
+            facebook:
+              type: string
+              format: uri
+              maxLength: 2048
+              description: Absolute HTTP(S) URL without credentials
+            instagram:
+              type: string
+              format: uri
+              maxLength: 2048
+              description: Absolute HTTP(S) URL without credentials
+            linkedin:
+              type: string
+              format: uri
+              maxLength: 2048
+              description: Absolute HTTP(S) URL without credentials
+            youtube:
+              type: string
+              format: uri
+              maxLength: 2048
+              description: Absolute HTTP(S) URL without credentials
+            tiktok:
+              type: string
+              format: uri
+              maxLength: 2048
+              description: Absolute HTTP(S) URL without credentials
+            x:
+              type: string
+              format: uri
+              maxLength: 2048
+              description: Absolute HTTP(S) URL without credentials
+        footer:
+          type: object
+          additionalProperties: false
+          required:
+            - ar
+          properties:
+            ar:
+              type: string
+              minLength: 1
+              maxLength: 1000
+            en:
+              type: string
+              minLength: 1
+              maxLength: 1000
+          nullable: true
+        defaultSeo:
+          type: object
+          additionalProperties: false
+          properties:
+            title:
+              type: object
+              additionalProperties: false
+              required:
+                - ar
+              properties:
+                ar:
+                  type: string
+                  minLength: 1
+                  maxLength: 200
+                en:
+                  type: string
+                  minLength: 1
+                  maxLength: 200
+            description:
+              type: object
+              additionalProperties: false
+              required:
+                - ar
+              properties:
+                ar:
+                  type: string
+                  minLength: 1
+                  maxLength: 600
+                en:
+                  type: string
+                  minLength: 1
+                  maxLength: 600
+      minProperties: 1
+      description:
+        Academy public configuration only. about/address/footer are plain text, not trusted
+        HTML. Each localized/nested field replaces the entire supplied field; omitted top-level fields
+        are preserved. Null clears nullable fields, empty socialLinks/defaultSeo clears those objects.
+        No secrets or private integration settings accepted.
+    SettingsResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - success
+        - message
+        - data
+        - meta
+      properties:
+        success:
+          type: boolean
+          enum:
+            - true
+        message:
+          type: string
+        data:
+          $ref: '#/components/schemas/AcademySettings'
         meta:
           type: object
           nullable: true

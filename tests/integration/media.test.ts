@@ -15,6 +15,7 @@ import { AdminService, createAdminModel } from '../../src/modules/admins/index.j
 import { MediaService, createMediaModel } from '../../src/modules/media/index.js';
 import { MEDIA_BUCKET } from '../../src/infrastructure/storage/media-references.js';
 import { testEnvironment } from '../helpers.js';
+import { expectOpenApiFields } from '../fixtures/openapi-fields.js';
 
 const uri = process.env.TEST_MONGODB_URI;
 if (!uri || !/^to_academy_test(?:_[a-z0-9]+)?$/.test(new URL(uri).pathname.slice(1)))
@@ -101,6 +102,7 @@ describe('real GridFS uploads and privacy', () => {
         .field('visibility', 'public')
         .expect(201);
       const data = res.body.data;
+      expectOpenApiFields(data, 'MediaMetadata');
       expect(data).toMatchObject({
         size: bytes.length,
         mimeType: 'image/' + format,

@@ -15,7 +15,7 @@ Categories is the only business module added in this milestone. It uses the esta
 }
 ```
 
-Arabic name is required (trimmed 1..120 characters), English optional. Description is an optional localized object; each string max4000. Image is a nullable ObjectId reference, serialized as a string, following the backend's Mongo reference convention. Only its syntax is checked until Media exists; no URL input, file upload or GridFS lookup was introduced. Default active=true, sortOrder=0 (integer 0..1,000,000), description={}, image=null; normal timestamps. API uses `id`, never `_id`/`__v` or embedded locale subdocument ids.
+Arabic name is required (trimmed 1..120 characters), English optional. Description is an optional localized object; each string max4000. Image is a nullable ObjectId reference, serialized as a string, following the backend's Mongo reference convention. Category image remains a reserved opaque reference outside the Phase 2.5 media integration scope (courses, lectures, articles and settings). No category-image upload/publication workflow is provided. Default active=true, sortOrder=0 (integer 0..1,000,000), description={}, image=null; normal timestamps. API uses `id`, never `_id`/`__v` or embedded locale subdocument ids.
 
 The latest approved phase request intentionally supersedes the initial flat-string category shape and original `hr` seed slug. This milestone uses localized objects and `human-resources`. No previous Categories implementation or category migration is being replaced.
 

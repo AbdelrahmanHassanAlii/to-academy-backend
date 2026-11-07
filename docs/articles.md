@@ -1,0 +1,15 @@
+# Articles
+
+Module: `src/modules/articles/{model,routes,controller,service,validators,utils}/` plus index.ts. Fields: title {ar,en?}, normalized unique slug, nullable excerpt {ar,en?}, nullable HTML content {ar,en?}, nullable thumbnail Media reference, author display name (default فريق الأكاديمية), draft/published/archived status, featured flag, localized SEO title/description, server-owned first publishedAt, createdAt/updatedAt. Arabic required on any supplied localized object. Bounds: title/author200, excerpt600, HTML30000 characters/language before and after sanitization; JSON request body limit100KiB. Indexes cover unique slug, status/date/featured and thumbnail references.
+
+GET /api/v1/articles returns only published cards: id/title/slug/excerpt/thumbnail/author/featured/publishedAt. GET /api/v1/articles/:slug returns published detail with sanitized content, SEO and timestamps. Draft/archived slugs return404. Neither endpoint loads a session or exposes internal version/status fields. Query: page>=1 (max100000), limit1..100 (default12), q1..100 literal case-insensitive title/excerpt search, featured=true|false, sort=newest|oldest|title. Stable _id tie-break; newest/oldest sort on creation time.
+
+Admin: GET/POST /api/v1/admin/articles; GET/PATCH/DELETE /api/v1/admin/articles/:id. All require an active administrator session; writes also require allowed Origin and current X-CSRF-Token. Admin list supports status and the public query fields, default limit12; detail/list use editable DTOs. DELETE archives and retains references. Draft/published/archived transitions are editable; publication requires an Arabic excerpt and nonempty sanitized Arabic HTML. First publishedAt is set once and retained through draft/archive/republish. Slugs are automatically normalized/generated with bounded suffix allocation; explicit collisions409. Once published, a slug cannot change. Optimistic concurrent edit conflicts409.
+
+Thumbnails are optional. Any supplied thumbnail must exist, be a supported ready image and have a backing GridFS file. A published article requires public media, including when publishing an existing private-image draft. Remove/replace thumbnail explicitly to release references after archiving. See [Media](media.md).
+
+## HTML policy
+
+Content is HTML sanitized server-side on **write and DTO read** with sanitize-html. Allowlist: p,br,h2,h3,h4,strong,em,b,i,u,s,ul,ol,li,blockquote,pre,code,a,hr. Only href/title on anchors; href schemes http/https/mailto, no protocol-relative URLs. No inline event handlers, scripts, styles, SVG, forms, images, iframes or embeds. Sanitization may remove all content; drafts store null in that case and publishing fails. No CMS dependency or arbitrary rich-text JSON execution. Existing out-of-band database content is sanitized on read as defense in depth.
+
+Frontends may render only returned sanitized content as HTML. All other article fields, Course/Lecture descriptions and Settings fields are **plain text** and must be escaped, never inserted as HTML. HTML sanitizer configuration is deliberately narrow; adding formats requires security tests.

@@ -2,6 +2,7 @@ import { beforeAll, afterAll, describe, it, expect } from 'vitest';
 import request from 'supertest';
 import { Types } from 'mongoose';
 import { Phase25Fixture } from '../fixtures/phase25.js';
+import { expectOpenApiFields } from '../fixtures/openapi-fields.js';
 import { SettingsService, createSettingsModel } from '../../src/modules/settings/index.js';
 const f = new Phase25Fixture();
 const model = createSettingsModel(f.db.connection);
@@ -28,6 +29,7 @@ afterAll(async () => {
 describe('academy settings singleton', () => {
   it('returns safe public defaults without creating a database record', async () => {
     const res = await request(f.app).get('/api/v1/settings').expect(200);
+    expectOpenApiFields(res.body.data, 'AcademySettings');
     expect(res.body.data).toMatchObject({
       academyName: { ar: 'أكاديمية TO', en: 'TO Academy' },
       logo: null,
