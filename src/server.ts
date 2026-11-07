@@ -8,12 +8,15 @@ import { Database } from './config/database.js';
 import { createSessionStore } from './config/session.js';
 import { createLogger } from './infrastructure/logging/logger.js';
 import { closeHttpServer } from './shared/utils/shutdown.js';
+import { AdminService, createAdminModel } from './modules/admins/index.js';
 
 export async function startServer(env: Environment, logger: Logger) {
   const database = new Database(logger);
   try {
     await database.connect(env.MONGODB_URI);
     const store = await createSessionStore(database.connection);
+    const admins = new AdminService(createAdminModel(database.connection));
+    await admins.ensureIndexes();
     store.on('error', () => logger.error({ code: 'SESSION_STORE_ERROR' }, 'Session store failed'));
     let stopping = false;
     const isReady = async () => {
@@ -27,7 +30,7 @@ export async function startServer(env: Environment, logger: Logger) {
       }
     };
     if (!(await isReady())) throw new Error('SESSION_STORE_UNAVAILABLE');
-    const app = createApp({ env, logger, store, isReady });
+    const app = createApp({ env, logger, store, admins, isReady });
     const server = createServer(app);
     server.requestTimeout = 30_000;
     server.headersTimeout = 15_000;

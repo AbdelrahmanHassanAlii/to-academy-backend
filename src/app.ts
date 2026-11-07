@@ -16,6 +16,8 @@ import { errorHandler } from './shared/middleware/error-handler.js';
 import { notFound } from './shared/middleware/not-found.js';
 import { AppError } from './shared/errors/app-error.js';
 import { success } from './shared/utils/response.js';
+import { createAuthRoutes } from './modules/auth/index.js';
+import { createAdminRoutes, type AdminService } from './modules/admins/index.js';
 
 export interface AppDependencies {
   env: Environment;
@@ -23,9 +25,17 @@ export interface AppDependencies {
   isReady: () => Promise<boolean>;
   store?: Store;
   additionalRoutes?: Router;
+  admins?: AdminService;
 }
 
-export function createApp({ env, logger, isReady, store, additionalRoutes }: AppDependencies) {
+export function createApp({
+  env,
+  logger,
+  isReady,
+  store,
+  additionalRoutes,
+  admins,
+}: AppDependencies) {
   const app = express();
   app.disable('x-powered-by');
   app.set('trust proxy', env.TRUST_PROXY_HOPS);
@@ -92,6 +102,10 @@ export function createApp({ env, logger, isReady, store, additionalRoutes }: App
       enforceSessionExpiry(env),
       createSessionRoutes(env),
     );
+    if (admins) {
+      app.use('/api/v1/auth', createAuthRoutes(admins, env));
+      app.use('/api/v1/admin/admins', createAdminRoutes(admins, env));
+    }
     if (additionalRoutes) app.use('/api/v1', additionalRoutes);
   } else {
     // Unit tests may construct the non-session foundation. Runtime startup always supplies MongoStore.
