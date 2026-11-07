@@ -1,6 +1,6 @@
 # API contract plan — v1
 
-Phase 0 design, 2026-11-07. None of these endpoints exists yet. This document is the implementation plan; `docs/openapi.yaml` will become the authoritative machine-readable contract as endpoints are implemented in Phases 1-2. Do not generate frontend types from invented or incomplete behavior. See [architecture](phase-0-architecture.md) for security, relationships, lifecycle and environment decisions.
+Phase 0 design, updated through Phase 2.3 on 2026-11-07. Foundation, auth, Categories and Courses are implemented; other modules remain planned. This document is the implementation plan; `docs/openapi.yaml` will become the authoritative machine-readable contract as endpoints are implemented in Phases 1-2. Do not generate frontend types from invented or incomplete behavior. See [architecture](phase-0-architecture.md) for security, relationships, lifecycle and environment decisions.
 
 ## Conventions
 
@@ -42,7 +42,8 @@ Paths below include `/api/v1` implicitly. `Session` = authenticated active admin
 | PATCH | `/admin/admins/me` | Session + CSRF | `{name}` only; no public/admin account creation endpoint |
 | GET | `/admin/overview` | Session | `{totalCourses,publishedCourses,upcomingLectures,totalRegistrations,pendingRegistrations}` |
 | GET | `/categories` | Public | Active only, paginated, sortOrder |
-| GET | `/courses` | Public | Published + active category only; filters `category` slug, `q`, `isFree`; paginated |
+| GET | `/courses` | Public | Published + active category only; filters `category` slug, `q`, `featured`, `sort`; paginated |
+| GET | `/courses/featured` | Public | Featured published courses; same pagination/filters |
 | GET | `/courses/:slug` | Public | Public course detail or 404 |
 | GET | `/lectures` | Public | Published only; `upcoming=true` for scheduledAt>=now; paginated |
 | GET | `/lectures/:slug` | Public | Public lecture detail, never meetingUrl |
@@ -98,9 +99,11 @@ Input: name (required), slug (optional at creation), description (optional), ima
 
 ### Courses
 
-Input: title, slug optional on creation, shortDescription, description, category ObjectId, thumbnail nullable media id, curriculum array of `{title,topics:string[]}`, lecturesCount nonnegative integer, duration display string, targetAudience:string[], trainingMethod enum `online_live|offline|hybrid`, price nullable integer piastres, currency `EGP`, isFree boolean, status `draft|published|archived`, seo object. Drafts permit incomplete editorial fields but always valid types and references; publish requires title, descriptions, active category, duration, trainingMethod, and coherent pricing. Title required at creation, initial status draft unless complete publish input is supplied.
+Implemented in Phase 2.3; see [Courses contract](courses.md) and authoritative OpenAPI0.4.0. Newest approved phase requirements supersede original lecturesCount/trainingMethod and no-featured proposal: use lectureCount, trainingMode (online-live|online-recorded|hybrid), featured and localized title/shortDescription/description.
 
-Public list cards: id/title/slug/shortDescription/category `{id,name,slug}`/thumbnail/duration/price/currency/isFree. Detail additionally includes description/curriculum/lecturesCount/targetAudience/trainingMethod/seo and timestamps. Media fields serialize as safe metadata with public URL, not blobs. Admin receives ids suitable for form editing. No unspecified featured flag: homepage takes the latest published courses initially.
+Required on creation: title.ar and existing category ObjectId. Optional explicit slug, thumbnail nullable ObjectId, curriculum array of {title,topics:string[]}, lectureCount, duration display string, targetAudience:string[], trainingMode, price nullable integer piastres, currency EGP, isFree, status draft|published|archived, featured, localized SEO. Price null means unannounced, positive means paid, zero requires free. Draft defaults support incomplete content; publish requires summary/description/duration/trainingMode and active category. Server-owned first publishedAt locks slug permanently after initial publication. Draft slug updates are explicit; title edits preserve slug.
+
+Public GET /courses, /courses/featured, /courses/:slug require published status plus active category. Public category filter is a slug; admin filter and assignments use ObjectId. Query supports q literal title search, featured, page/limit and sort newest|oldest|title; admin adds status. Cards project only public summary fields; detail adds curriculum/content/SEO; category={id,name,slug}. Admin receives category id and lifecycle metadata. Thumbnail is syntactically validated only until Media. DELETE /admin/courses/:id archives and returns retained admin DTO, never data:null or physical deletion. All admin reads require session and writes additionally require Origin/CSRF.
 
 ### Lectures
 

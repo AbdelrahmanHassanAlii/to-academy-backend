@@ -1,6 +1,6 @@
 # TO Academy backend
 
-Phase 2.2: Express/TypeScript foundation, administrator authentication and localized Categories management. Three repositories remain independent; this project runs directly on the host. See [Categories and seed instructions](docs/categories.md), [authentication](docs/authentication.md), and [commit hooks](docs/contributing.md).
+Phase 2.3: Express/TypeScript foundation, administrator authentication, localized Categories and Courses management. Three repositories remain independent; this project runs directly on the host. See [Courses](docs/courses.md), [Phase 2.4 plan](docs/phase-2-4-plan.md), [Categories and seed instructions](docs/categories.md), [authentication](docs/authentication.md), and [commit hooks](docs/contributing.md).
 
 ## Requirements and installation
 
