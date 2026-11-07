@@ -9,6 +9,21 @@ export function errorHandler(logger: Logger): ErrorRequestHandler {
       return;
     }
     let safe = error instanceof AppError ? error : undefined;
+    if (
+      error instanceof Error &&
+      [
+        'MongoNetworkError',
+        'MongoNetworkTimeoutError',
+        'MongoServerSelectionError',
+        'MongooseServerSelectionError',
+        'MongoNotConnectedError',
+        'MongoTopologyClosedError',
+        'MongoClientClosedError',
+        'MongoOperationTimeoutError',
+      ].includes(error.name)
+    ) {
+      safe = new AppError(503, 'DATABASE_UNAVAILABLE', 'Database service is unavailable');
+    }
     if (typeof error === 'object' && error !== null && 'type' in error) {
       if (error.type === 'entity.parse.failed')
         safe = new AppError(400, 'INVALID_JSON', 'Invalid JSON body');

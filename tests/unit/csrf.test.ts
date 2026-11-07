@@ -8,6 +8,7 @@ import { requireCsrf, issueCsrf, enforceSessionExpiry } from '../../src/shared/m
 import { errorHandler } from '../../src/shared/middleware/error-handler.js';
 import { createLogger } from '../../src/infrastructure/logging/logger.js';
 import { productionEnvironment, testEnvironment } from '../helpers.js';
+import { destroySession } from '../../src/modules/auth/utils/session-lifecycle.js';
 
 function fixture(production = false, trustProxy = true) {
   const env = parseEnvironment(production ? productionEnvironment : testEnvironment);
@@ -30,6 +31,71 @@ function fixture(production = false, trustProxy = true) {
 }
 
 describe('synchronizer CSRF foundation', () => {
+  it('cannot resurrect a logged-out session through an in-flight existing-token read', async () => {
+    let announceRead!: () => void;
+    const captured = new Promise<void>((resolve) => {
+      announceRead = resolve;
+    });
+    let resumeRead!: () => void;
+    let delayNextRead = false;
+    class DeferredStore extends session.MemoryStore {
+      override get(
+        id: string,
+        callback: (error: unknown, data?: session.SessionData | null) => void,
+      ) {
+        super.get(id, (error, data) => {
+          if (!delayNextRead) {
+            callback(error, data);
+            return;
+          }
+          delayNextRead = false;
+          resumeRead = () => {
+            callback(error, data);
+          };
+          announceRead();
+        });
+      }
+    }
+    const env = parseEnvironment(testEnvironment);
+    const store = new DeferredStore();
+    const app = express();
+    app.use(sessionMiddleware(env, store), enforceSessionExpiry(env));
+    app.get(
+      '/initialize',
+      (req, _res, next) => {
+        req.session.adminId = 'test-identity';
+        next();
+      },
+      issueCsrf(env),
+    );
+    app.get('/csrf', issueCsrf(env));
+    app.post('/logout', requireCsrf(env), async (req, res) => {
+      await destroySession(req, res, env);
+      res.sendStatus(200);
+    });
+    app.get('/protected', (req, res) => {
+      res.sendStatus(req.session.adminId ? 200 : 401);
+    });
+    app.use(errorHandler(createLogger('silent')));
+    const initial = await request(app).get('/initialize').set('Origin', 'http://localhost:5174');
+    const cookie = (initial.headers['set-cookie'] as unknown as string[])[0]!.split(';')[0]!;
+    delayNextRead = true;
+    const inFlight = request(app)
+      .get('/csrf')
+      .set('Cookie', cookie)
+      .set('Origin', 'http://localhost:5174')
+      .then((res) => res);
+    await captured;
+    await request(app)
+      .post('/logout')
+      .set('Cookie', cookie)
+      .set('Origin', 'http://localhost:5174')
+      .set('X-CSRF-Token', initial.body.data.csrfToken as string)
+      .expect(200);
+    resumeRead();
+    await inFlight;
+    expect((await request(app).get('/protected').set('Cookie', cookie)).status).toBe(401);
+  });
   it('maps session-store read failures to safe 503 responses', async () => {
     const env = parseEnvironment(testEnvironment);
     const store = new session.MemoryStore();

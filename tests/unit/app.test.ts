@@ -3,6 +3,7 @@ import request from 'supertest';
 import { describe, expect, it } from 'vitest';
 import express from 'express';
 import { z } from 'zod';
+import mongoose from 'mongoose';
 import { createApp } from '../../src/app.js';
 import { parseEnvironment } from '../../src/config/env.js';
 import { createLogger } from '../../src/infrastructure/logging/logger.js';
@@ -138,6 +139,17 @@ describe('CORS', () => {
 });
 
 describe('shared validation and errors', () => {
+  it('classifies known database connectivity failures as safe retryable 503 errors', async () => {
+    const fixture = express();
+    fixture.get('/', () => {
+      throw new mongoose.mongo.MongoNetworkError('private-database-sentinel');
+    });
+    fixture.use(errorHandler(logger));
+    const res = await request(fixture).get('/');
+    expect(res.status).toBe(503);
+    expect(res.body.code).toBe('DATABASE_UNAVAILABLE');
+    expect(JSON.stringify(res.body)).not.toContain('private-database-sentinel');
+  });
   it('logs method/status/id without request headers, query values or bodies', async () => {
     let lines = '';
     const sink = new Writable({

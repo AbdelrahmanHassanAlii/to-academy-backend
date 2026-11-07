@@ -38,17 +38,21 @@ export function enforceSessionExpiry(env: Environment): RequestHandler {
 export function issueCsrf(env: Environment): RequestHandler {
   return async (req, res) => {
     assertTrustedOrigin(req, env);
+    const needsInitialization = !req.session.csrfToken || req.session.expiresAt === undefined;
     req.session.csrfToken ??= randomBytes(32).toString('hex');
     req.session.expiresAt ??= Date.now() + SESSION_LIFETIME_MS;
-    // Keep the original expiration on repeated token retrieval; no rolling sessions.
-    req.session.cookie.expires = new Date(req.session.expiresAt);
-    await new Promise<void>((resolve, reject) => {
-      req.session.save((error: unknown) => {
-        if (error)
-          reject(new AppError(503, 'SESSION_UNAVAILABLE', 'Session service is unavailable'));
-        else resolve();
+    // MongoStore.set upserts. Never save an unchanged authenticated session: a concurrent
+    // logout may have deleted it after this request loaded it. Store.touch does not upsert.
+    if (needsInitialization) {
+      req.session.cookie.expires = new Date(req.session.expiresAt);
+      await new Promise<void>((resolve, reject) => {
+        req.session.save((error: unknown) => {
+          if (error)
+            reject(new AppError(503, 'SESSION_UNAVAILABLE', 'Session service is unavailable'));
+          else resolve();
+        });
       });
-    });
+    }
     res.setHeader('Cache-Control', 'no-store');
     success(res, { csrfToken: req.session.csrfToken }, 'CSRF token issued');
   };
