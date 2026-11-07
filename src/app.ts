@@ -18,6 +18,11 @@ import { AppError } from './shared/errors/app-error.js';
 import { success } from './shared/utils/response.js';
 import { createAuthRoutes } from './modules/auth/index.js';
 import { createAdminRoutes, type AdminService } from './modules/admins/index.js';
+import {
+  createPublicCategoryRoutes,
+  createAdminCategoryRoutes,
+  type CategoryService,
+} from './modules/categories/index.js';
 
 export interface AppDependencies {
   env: Environment;
@@ -26,6 +31,7 @@ export interface AppDependencies {
   store?: Store;
   additionalRoutes?: Router;
   admins?: AdminService;
+  categories?: CategoryService;
 }
 
 export function createApp({
@@ -35,6 +41,7 @@ export function createApp({
   store,
   additionalRoutes,
   admins,
+  categories,
 }: AppDependencies) {
   const app = express();
   app.disable('x-powered-by');
@@ -70,6 +77,7 @@ export function createApp({
   );
   app.use(cors(corsOptions(env)));
   app.use(express.json({ limit: '100kb' }));
+  if (categories) app.use('/api/v1/categories', createPublicCategoryRoutes(categories));
   app.get('/api/v1/health', (_req, res) => {
     res.setHeader('Cache-Control', 'no-store');
     success(res, { status: 'ok' }, 'Service is alive');
@@ -105,6 +113,8 @@ export function createApp({
     if (admins) {
       app.use('/api/v1/auth', createAuthRoutes(admins, env));
       app.use('/api/v1/admin/admins', createAdminRoutes(admins, env));
+      if (categories)
+        app.use('/api/v1/admin/categories', createAdminCategoryRoutes(categories, admins, env));
     }
     if (additionalRoutes) app.use('/api/v1', additionalRoutes);
   } else {
