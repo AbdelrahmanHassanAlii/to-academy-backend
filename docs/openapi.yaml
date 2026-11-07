@@ -1,0 +1,222 @@
+openapi: 3.0.3
+info:
+  title: TO Academy API
+  version: 0.1.0
+  description: Phase 1 foundation only. Business endpoints are not implemented.
+servers:
+  - url: /api/v1
+tags:
+  - name: Operations
+  - name: Session foundation
+paths:
+  /health:
+    get:
+      tags: [Operations]
+      operationId: getHealth
+      summary: Process liveness; no database access or session creation
+      responses:
+        '200':
+          description: Process is alive
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '413':
+          $ref: '#/components/responses/TooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMedia'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /ready:
+    get:
+      tags: [Operations]
+      operationId: getReadiness
+      summary: Live database ping and initialized session-store readiness
+      responses:
+        '200':
+          description: Ready to accept traffic
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadyResponse'
+        '503':
+          description: Dependency unavailable or shutdown in progress
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '413':
+          $ref: '#/components/responses/TooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMedia'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /auth/csrf:
+    get:
+      tags: [Session foundation]
+      operationId: getCsrfToken
+      summary: Issue or reuse a session-bound synchronizer token
+      description: Requires exact allowed Origin. Sets an HttpOnly host-only session cookie. Keep token in memory and send X-CSRF-Token on future session/admin writes. No login endpoints exist yet. Response is no-store. Limit 60/minute/IP.
+      parameters:
+        - in: header
+          name: Origin
+          required: true
+          schema:
+            type: string
+          example: https://admin.toacademy.com
+      responses:
+        '200':
+          description: Token issued; credentialed browser must accept the session cookie
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+              description: Opaque session cookie; HttpOnly, SameSite=Lax, Path=/, Secure in production. Never read or persist its value in JavaScript.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        required: [csrfToken]
+                        properties:
+                          csrfToken:
+                            type: string
+                            pattern: '^[a-f0-9]{64}$'
+        '401':
+          description: Existing session expired; fetch a fresh token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '413':
+          $ref: '#/components/responses/TooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMedia'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '429':
+          description: Rate limit exceeded
+          headers:
+            Retry-After:
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Session persistence unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+components:
+  schemas:
+    SuccessEnvelope:
+      type: object
+      required: [success, message, data, meta]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        message:
+          type: string
+        data: {}
+        meta:
+          type: object
+          nullable: true
+          example: null
+    HealthResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessEnvelope'
+        - type: object
+          properties:
+            data:
+              type: object
+              required: [status]
+              properties:
+                status:
+                  type: string
+                  enum: [ok]
+    ReadyResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessEnvelope'
+        - type: object
+          properties:
+            data:
+              type: object
+              required: [status]
+              properties:
+                status:
+                  type: string
+                  enum: [ready]
+    ErrorResponse:
+      type: object
+      required: [success, message, code, errors]
+      properties:
+        success:
+          type: boolean
+          enum: [false]
+        message:
+          type: string
+        code:
+          type: string
+        errors:
+          type: array
+          items:
+            type: object
+            required: [path, message, code]
+            properties:
+              path:
+                type: string
+              message:
+                type: string
+              code:
+                type: string
+  responses:
+    BadRequest:
+      description: Malformed JSON body (INVALID_JSON)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    TooLarge:
+      description: Body exceeds 100 KiB (PAYLOAD_TOO_LARGE)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    UnsupportedMedia:
+      description: Unsupported JSON charset or content encoding (UNSUPPORTED_MEDIA_TYPE)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    InternalError:
+      description: Unexpected server error; safe generic message only (INTERNAL_ERROR)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Forbidden:
+      description: Untrusted or missing required Origin
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
