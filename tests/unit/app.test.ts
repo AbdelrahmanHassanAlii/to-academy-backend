@@ -104,6 +104,11 @@ describe('foundation HTTP contracts', () => {
       '/admin/categories/{id}',
       '/admin/courses',
       '/admin/courses/{id}',
+      '/admin/lectures',
+      '/admin/lectures/{id}',
+      '/admin/registrations',
+      '/admin/registrations/export',
+      '/admin/registrations/{id}',
       '/auth/csrf',
       '/auth/login',
       '/auth/logout',
@@ -114,12 +119,41 @@ describe('foundation HTTP contracts', () => {
       '/courses/featured',
       '/courses/{slug}',
       '/health',
+      '/lectures',
+      '/lectures/{slug}',
       '/ready',
+      '/registrations',
     ]);
     expect(spec.body.components.securitySchemes.sessionCookie.in).toBe('cookie');
     const docs = await request(app()).get('/api/v1/docs/');
     expect(docs.status).toBe(200);
     expect(docs.text).toContain('swagger-ui');
+  });
+
+  it('documents public lecture responses without any meeting URL and protected admin operations', async () => {
+    const spec = (await request(app()).get('/api/v1/openapi.json')).body;
+    const schemas = spec.components.schemas;
+    for (const name of ['LectureCard', 'LecturePublic', 'LectureAdminListItem']) {
+      expect(schemas[name]).toBeDefined();
+      expect(schemas[name].properties).not.toHaveProperty('meetingUrl');
+      expect(schemas[name].additionalProperties).toBe(false);
+    }
+    expect(schemas.LectureAdmin.properties.meetingUrl).toBeDefined();
+    for (const path of [
+      '/admin/lectures',
+      '/admin/lectures/{id}',
+      '/admin/registrations',
+      '/admin/registrations/{id}',
+      '/admin/registrations/export',
+    ]) {
+      for (const operation of Object.values(spec.paths[path]) as {
+        security: unknown;
+        parameters?: { name: string }[];
+      }[]) {
+        expect(operation.security).toEqual([{ sessionCookie: [] }]);
+      }
+    }
+    expect(spec.paths['/registrations'].post.security).toEqual([]);
   });
 });
 

@@ -1,9 +1,10 @@
 openapi: 3.0.3
 info:
   title: TO Academy API
-  version: 0.4.0
-  description: TO Academy foundation, administrator sessions, localized categories and courses. Only
-    implemented endpoints are listed.
+  version: 0.5.0
+  description: TO Academy foundation, administrator sessions, Categories, Courses, Lectures and
+    Registrations. Implemented endpoints only. UTC timestamps; academy timezone Africa/Cairo.
+    Registration writes require MongoDB replica set/Atlas.
 servers:
   - url: /api/v1
 tags:
@@ -13,6 +14,8 @@ tags:
   - name: Administrators
   - name: Categories
   - name: Courses
+  - name: Lectures
+  - name: Registrations
 paths:
   /health:
     get:
@@ -1539,6 +1542,681 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /lectures:
+    get:
+      tags:
+        - Lectures
+      operationId: listLectures
+      summary: List published lectures
+      description:
+        Public projection never contains meetingUrl. Registration does not grant meeting URL
+        access; administrators share meeting details manually outside the website. No public
+        search/featured result contains private URLs. Cancelled, completed and draft lectures are
+        hidden. Past published lectures remain visible unless filtered.
+      security: []
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100000
+            default: 1
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 12
+        - &a9
+          in: query
+          name: q
+          schema:
+            type: string
+            maxLength: 100
+            minLength: 1
+          description: Literal Arabic/English title search; regex characters are escaped.
+        - &a10
+          in: query
+          name: course
+          schema: &a14
+            type: string
+            pattern: ^[a-fA-F0-9]{24}$
+        - &a11
+          in: query
+          name: period
+          schema:
+            type: string
+            enum:
+              - upcoming
+              - past
+          description: 'upcoming: scheduledAt > now; past: scheduledAt <= now. Published-only publicly.'
+        - &a12
+          in: query
+          name: sort
+          schema:
+            type: string
+            enum:
+              - schedule
+              - latest
+              - newest
+              - oldest
+              - title
+            default: schedule
+      responses:
+        '200':
+          description: List published lectures
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LecturePublicListResponse'
+        '400': &a1
+          description:
+            'VALIDATION_ERROR / INVALID_JSON: malformed input, query, id, date, duration, deadline,
+            consent or status.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403': &a2
+          description: 'ORIGIN_FORBIDDEN / CSRF_INVALID: trusted Origin or CSRF denied.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404': &a3
+          description:
+            'LECTURE_NOT_FOUND / COURSE_NOT_FOUND / REGISTRATION_NOT_FOUND: absent target, or
+            hidden public content.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409': &a4
+          description:
+            LECTURE_CONFLICT / LECTURE_SLUG_EXISTS / REGISTRATION_CONFLICT / REGISTRATION_EXISTS /
+            TARGET_INELIGIBLE / EXPORT_TOO_LARGE. No existing student information is returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413': &a5
+          $ref: '#/components/responses/TooLarge'
+        '415': &a6
+          $ref: '#/components/responses/UnsupportedMedia'
+        '500': &a7
+          $ref: '#/components/responses/InternalError'
+        '503': &a8
+          description:
+            DATABASE_UNAVAILABLE / SESSION_UNAVAILABLE / REGISTRATION_STORAGE_UNAVAILABLE.
+            Registration writes require replica-set/Atlas transaction support.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /lectures/{slug}:
+    get:
+      tags:
+        - Lectures
+      operationId: getLecture
+      summary: Read published lecture
+      description:
+        Public projection never contains meetingUrl. Registration does not grant meeting URL
+        access; administrators share meeting details manually outside the website. No public
+        search/featured result contains private URLs.
+      security: []
+      parameters:
+        - in: path
+          name: slug
+          required: true
+          schema:
+            type: string
+            maxLength: 120
+            minLength: 1
+      responses:
+        '200':
+          description: Read published lecture
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LecturePublicResponse'
+        '400': *a1
+        '403': *a2
+        '404': *a3
+        '409': *a4
+        '413': *a5
+        '415': *a6
+        '500': *a7
+        '503': *a8
+  /admin/lectures:
+    get:
+      tags:
+        - Lectures
+      operationId: listAdminLectures
+      summary: List administrator lectures without meeting URLs
+      description: ''
+      security: &a13
+        - sessionCookie: []
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100000
+            default: 1
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - *a9
+        - *a10
+        - *a11
+        - *a12
+        - in: query
+          name: status
+          schema: &a25
+            type: string
+            enum:
+              - draft
+              - published
+              - completed
+              - cancelled
+      responses:
+        '200':
+          description: List administrator lectures without meeting URLs
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LectureAdminListResponse'
+        '400': *a1
+        '401':
+          description: Missing, expired or inactive administrator session.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403': *a2
+        '404': *a3
+        '409': *a4
+        '413': *a5
+        '415': *a6
+        '500': *a7
+        '503': *a8
+    post:
+      tags:
+        - Lectures
+      operationId: createLecture
+      summary: Create a lecture
+      description: draft -> published/cancelled; published -> draft/completed/cancelled;
+        completed/cancelled terminal. Repeating current status is idempotent. Publication requires
+        Arabic descriptions, valid future schedule and positive duration; optional related course
+        must exist; deadline cannot follow schedule. Published URLs remain stable. A lecture with
+        reserved seats cannot become draft. Capacity cannot be reduced below reservedSeats and
+        concurrent reservations cause a retryable conflict rather than overbooking. Initial status
+        is draft (default) or published. Public projection never contains meetingUrl. Registration
+        does not grant meeting URL access; administrators share meeting details manually outside the
+        website. No public search/featured result contains private URLs.
+      security: *a13
+      parameters:
+        - &a16
+          in: header
+          name: Origin
+          required: true
+          schema:
+            type: string
+          description: Exact configured allowed Origin.
+        - &a17
+          in: header
+          name: X-CSRF-Token
+          required: true
+          schema:
+            type: string
+            pattern: ^[a-f0-9]{64}$
+          description: Current token from GET /auth/csrf, with the authenticated cookie.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LectureCreateRequest'
+      responses:
+        '201':
+          description: Create a lecture
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LectureAdminResponse'
+        '400': *a1
+        '401':
+          description: Missing, expired or inactive administrator session.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403': *a2
+        '404': *a3
+        '409': *a4
+        '413': *a5
+        '415': *a6
+        '500': *a7
+        '503': *a8
+  /admin/lectures/{id}:
+    get:
+      tags:
+        - Lectures
+      operationId: getAdminLecture
+      summary: Read administrator lecture including private meeting URL
+      description: No-store authenticated response. Public projection never contains meetingUrl.
+        Registration does not grant meeting URL access; administrators share meeting details
+        manually outside the website. No public search/featured result contains private URLs.
+      security: *a13
+      parameters:
+        - &a15
+          in: path
+          name: id
+          required: true
+          schema: *a14
+      responses:
+        '200':
+          description: Read administrator lecture including private meeting URL
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LectureAdminResponse'
+        '400': *a1
+        '401':
+          description: Missing, expired or inactive administrator session.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403': *a2
+        '404': *a3
+        '409': *a4
+        '413': *a5
+        '415': *a6
+        '500': *a7
+        '503': *a8
+    patch:
+      tags:
+        - Lectures
+      operationId: updateLecture
+      summary: Update lecture and publication state
+      description: draft -> published/cancelled; published -> draft/completed/cancelled;
+        completed/cancelled terminal. Repeating current status is idempotent. Publication requires
+        Arabic descriptions, valid future schedule and positive duration; optional related course
+        must exist; deadline cannot follow schedule. Published URLs remain stable. A lecture with
+        reserved seats cannot become draft. Capacity cannot be reduced below reservedSeats and
+        concurrent reservations cause a retryable conflict rather than overbooking.
+      security: *a13
+      parameters:
+        - *a15
+        - *a16
+        - *a17
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LectureUpdateRequest'
+      responses:
+        '200':
+          description: Update lecture and publication state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LectureAdminResponse'
+        '400': *a1
+        '401':
+          description: Missing, expired or inactive administrator session.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403': *a2
+        '404': *a3
+        '409': *a4
+        '413': *a5
+        '415': *a6
+        '500': *a7
+        '503': *a8
+    delete:
+      tags:
+        - Lectures
+      operationId: cancelLecture
+      summary: Soft cancel lecture and preserve registrations
+      description:
+        Always soft cancels; no destructive delete. Existing registrations are retained and new
+        registrations stop. completed lectures cannot be cancelled. Meeting URL omitted.
+      security: *a13
+      parameters:
+        - *a15
+        - *a16
+        - *a17
+      responses:
+        '200':
+          description: Soft cancel lecture and preserve registrations
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LectureAdminListItemResponse'
+        '400': *a1
+        '401':
+          description: Missing, expired or inactive administrator session.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403': *a2
+        '404': *a3
+        '409': *a4
+        '413': *a5
+        '415': *a6
+        '500': *a7
+        '503': *a8
+  /registrations:
+    post:
+      tags:
+        - Registrations
+      operationId: createRegistration
+      summary: Submit lecture registration or course enrollment request
+      description:
+        JSON only, exact trusted Origin, per-IP limit 30 attempts/15 minutes; no session or
+        CSRF token needed and no session is created. Explicit privacyConsent=true is mandatory.
+        Server records consent timestamp. Lecture must be published/future, deadline not expired,
+        capacity available; course must be published with active category.
+        Pending/confirmed/attended reserve seats. A conditional atomic lecture counter increment and
+        registration insert commit in one MongoDB transaction (replica set/Atlas required).
+        Duplicate-key/failed insert rolls back the counter. Cancellation releases a seat exactly
+        once. Reactivation reserves again and rechecks eligibility. Unique normalized phone+target
+        indexes include cancelled records; register for different targets freely. No payment or
+        notification integrations. Public projection never contains meetingUrl. Registration does
+        not grant meeting URL access; administrators share meeting details manually outside the
+        website. No public search/featured result contains private URLs. Course/category eligibility
+        is checked in the transaction snapshot; concurrent administrative changes may commit after
+        that snapshot.
+      security: []
+      parameters:
+        - *a16
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegistrationCreateRequest'
+            example:
+              fullName: Ahmed Mohamed
+              phone: '+201000000000'
+              email: ahmed@example.com
+              targetType: lecture
+              targetId: 0123456789abcdef01234567
+              privacyConsent: true
+      responses:
+        '201':
+          description: Submit lecture registration or course enrollment request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegistrationReceiptResponse'
+        '400': *a1
+        '403': *a2
+        '404': *a3
+        '409': *a4
+        '413': *a5
+        '415': *a6
+        '429':
+          description: 'RATE_LIMITED: retry after Retry-After seconds.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          headers:
+            Retry-After:
+              schema:
+                type: integer
+              description: Seconds until retry.
+        '500': *a7
+        '503': *a8
+  /admin/registrations:
+    get:
+      tags:
+        - Registrations
+      operationId: listRegistrations
+      summary: List registrations with minimized personal information
+      description:
+        Lists omit phone, email, consent and administrative notes; use protected detail for
+        contact data. All admin responses are no-store.
+      security: *a13
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100000
+            default: 1
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - &a18
+          in: query
+          name: targetType
+          schema:
+            type: string
+            enum:
+              - lecture
+              - course
+        - &a19
+          in: query
+          name: lecture
+          schema: *a14
+        - &a20
+          in: query
+          name: course
+          schema: *a14
+        - &a21
+          in: query
+          name: status
+          schema: &a39
+            type: string
+            enum:
+              - pending
+              - confirmed
+              - cancelled
+              - attended
+        - &a22
+          in: query
+          name: q
+          schema:
+            type: string
+            maxLength: 100
+            minLength: 1
+          description:
+            Literal student-name/phone search; complete valid phones normalize to E.164. Mutually
+            inconsistent target filters are rejected.
+        - &a23
+          in: query
+          name: sort
+          schema:
+            type: string
+            enum:
+              - newest
+              - oldest
+            default: newest
+      responses:
+        '200':
+          description: List registrations with minimized personal information
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegistrationAdminListResponse'
+        '400': *a1
+        '401':
+          description: Missing, expired or inactive administrator session.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403': *a2
+        '404': *a3
+        '409': *a4
+        '413': *a5
+        '415': *a6
+        '500': *a7
+        '503': *a8
+  /admin/registrations/{id}:
+    get:
+      tags:
+        - Registrations
+      operationId: getRegistration
+      summary: Read registration contact details and internal notes
+      description: ''
+      security: *a13
+      parameters:
+        - *a15
+      responses:
+        '200':
+          description: Read registration contact details and internal notes
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegistrationAdminResponse'
+        '400': *a1
+        '401':
+          description: Missing, expired or inactive administrator session.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403': *a2
+        '404': *a3
+        '409': *a4
+        '413': *a5
+        '415': *a6
+        '500': *a7
+        '503': *a8
+    patch:
+      tags:
+        - Registrations
+      operationId: updateRegistration
+      summary: Update registration status or private notes
+      description: pending -> confirmed/cancelled; confirmed -> cancelled/attended; cancelled ->
+        pending/confirmed; attended terminal. Same status is idempotent. Attended only for
+        started/completed noncancelled lectures, never courses. Confirmation is manual and grants no
+        meeting URL access. Pending/confirmed/attended reserve seats. A conditional atomic lecture
+        counter increment and registration insert commit in one MongoDB transaction (replica
+        set/Atlas required). Duplicate-key/failed insert rolls back the counter. Cancellation
+        releases a seat exactly once. Reactivation reserves again and rechecks eligibility. Unique
+        normalized phone+target indexes include cancelled records; register for different targets
+        freely. No payment or notification integrations.
+      security: *a13
+      parameters:
+        - *a15
+        - *a16
+        - *a17
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegistrationUpdateRequest'
+      responses:
+        '200':
+          description: Update registration status or private notes
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegistrationAdminResponse'
+        '400': *a1
+        '401':
+          description: Missing, expired or inactive administrator session.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403': *a2
+        '404': *a3
+        '409': *a4
+        '413': *a5
+        '415': *a6
+        '500': *a7
+        '503': *a8
+  /admin/registrations/export:
+    get:
+      tags:
+        - Registrations
+      operationId: exportRegistrations
+      summary: Export filtered registrations as Arabic-compatible CSV
+      description: Downloads all matching records, ignoring page/limit (accepted for filter reuse);
+        maximum 5000 records, otherwise EXPORT_TOO_LARGE 409 with no partial file. UTF-8 BOM, CRLF
+        records, every field quoted, embedded quotes doubled, formula prefixes including
+        whitespace/control characters neutralized with apostrophe. Phone values are spreadsheet
+        text. Name, phone, email, type, Arabic target-title snapshot, status, reference and UTC
+        creation date only. No notes, meeting URLs, credentials or session data. Response is
+        no-store.
+      security: *a13
+      parameters:
+        - *a18
+        - *a19
+        - *a20
+        - *a21
+        - *a22
+        - *a23
+        - in: query
+          name: page
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100000
+            default: 1
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: UTF-8 BOM CSV download
+          headers:
+            Content-Disposition:
+              schema:
+                type: string
+              example: attachment; filename="registrations.csv"
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                  - no-store
+          content:
+            text/csv:
+              schema:
+                type: string
+                format: binary
+        '400': *a1
+        '401':
+          description: Missing, expired or inactive administrator session.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403': *a2
+        '404': *a3
+        '409': *a4
+        '413': *a5
+        '415': *a6
+        '500': *a7
+        '503': *a8
 components:
   schemas:
     SuccessEnvelope:
@@ -2600,6 +3278,561 @@ components:
             $ref: '#/components/schemas/CourseAdmin'
         meta:
           $ref: '#/components/schemas/PaginationMeta'
+    LectureCreateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - title
+        - scheduledAt
+        - durationMinutes
+      properties: &a26
+        title:
+          $ref: '#/components/schemas/CourseTitle'
+        slug:
+          type: string
+          minLength: 1
+          maxLength: 120
+          description:
+            Arabic/Latin URL slug, generated when omitted. The reserved value featured is rejected.
+            Permanently locked after first publication.
+        shortDescription:
+          $ref: '#/components/schemas/CourseSummary'
+        description:
+          $ref: '#/components/schemas/CourseDescription'
+        course: &a24
+          type: string
+          pattern: ^[a-fA-F0-9]{24}$
+          nullable: true
+        scheduledAt: &a27
+          type: string
+          format: date-time
+          description: ISO 8601 input with explicit Z/offset; returned as UTC with Z. Display with
+            Africa/Cairo IANA rules.
+        durationMinutes:
+          type: integer
+          minimum: 1
+          maximum: 1440
+        capacity:
+          type: integer
+          minimum: 1
+          maximum: 100000
+          nullable: true
+        registrationDeadline: &a28
+          type: string
+          format: date-time
+          description: ISO 8601 input with explicit Z/offset; returned as UTC with Z. Display with
+            Africa/Cairo IANA rules.
+          nullable: true
+        thumbnail: *a24
+        meetingUrl: &a38
+          type: string
+          maxLength: 2000
+          format: uri
+          nullable: true
+          description:
+            Private administrator-managed HTTPS URL, without embedded credentials. No public DTO or
+            registration response includes this field. No invitations/Zoom integration.
+        status: *a25
+        seo:
+          $ref: '#/components/schemas/CourseSeo'
+    LectureUpdateRequest:
+      type: object
+      additionalProperties: false
+      properties: *a26
+      minProperties: 1
+    LectureCard:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - title
+        - slug
+        - shortDescription
+        - course
+        - scheduledAt
+        - durationMinutes
+        - capacity
+        - remainingSeats
+        - registrationDeadline
+        - thumbnail
+      properties:
+        id: *a14
+        title: &a29
+          $ref: '#/components/schemas/CourseTitle'
+        slug: &a30
+          type: string
+          maxLength: 120
+        shortDescription: &a31
+          type: object
+          additionalProperties: false
+          required:
+            - ar
+          properties:
+            ar:
+              type: string
+              minLength: 1
+              maxLength: 600
+            en:
+              type: string
+              minLength: 1
+              maxLength: 600
+          nullable: true
+        course: *a24
+        scheduledAt: *a27
+        durationMinutes: &a32
+          type: integer
+          minimum: 1
+          maximum: 1440
+        capacity: &a33
+          type: integer
+          minimum: 1
+          maximum: 100000
+          nullable: true
+        remainingSeats: &a34
+          type: integer
+          minimum: 0
+          maximum: 100000
+          nullable: true
+        registrationDeadline: *a28
+        thumbnail: *a24
+    LecturePublic:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - title
+        - slug
+        - shortDescription
+        - course
+        - scheduledAt
+        - durationMinutes
+        - capacity
+        - remainingSeats
+        - registrationDeadline
+        - thumbnail
+        - description
+        - seo
+        - createdAt
+        - updatedAt
+      properties:
+        id: *a14
+        title: *a29
+        slug: *a30
+        shortDescription: *a31
+        course: *a24
+        scheduledAt: *a27
+        durationMinutes: *a32
+        capacity: *a33
+        remainingSeats: *a34
+        registrationDeadline: *a28
+        thumbnail: *a24
+        description: &a35
+          type: object
+          additionalProperties: false
+          required:
+            - ar
+          properties:
+            ar:
+              type: string
+              minLength: 1
+              maxLength: 30000
+            en:
+              type: string
+              minLength: 1
+              maxLength: 30000
+          nullable: true
+        seo: &a36
+          $ref: '#/components/schemas/CourseSeo'
+        createdAt: *a27
+        updatedAt: *a27
+    LectureAdminListItem:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - title
+        - slug
+        - shortDescription
+        - course
+        - scheduledAt
+        - durationMinutes
+        - capacity
+        - remainingSeats
+        - registrationDeadline
+        - thumbnail
+        - description
+        - seo
+        - createdAt
+        - updatedAt
+        - status
+        - reservedSeats
+        - publishedAt
+      properties:
+        id: *a14
+        title: *a29
+        slug: *a30
+        shortDescription: *a31
+        course: *a24
+        scheduledAt: *a27
+        durationMinutes: *a32
+        capacity: *a33
+        remainingSeats: *a34
+        registrationDeadline: *a28
+        thumbnail: *a24
+        description: *a35
+        seo: *a36
+        createdAt: *a27
+        updatedAt: *a27
+        status: *a25
+        reservedSeats: &a37
+          type: integer
+          minimum: 0
+        publishedAt: *a28
+    LectureAdmin:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - title
+        - slug
+        - shortDescription
+        - course
+        - scheduledAt
+        - durationMinutes
+        - capacity
+        - remainingSeats
+        - registrationDeadline
+        - thumbnail
+        - description
+        - seo
+        - createdAt
+        - updatedAt
+        - status
+        - reservedSeats
+        - publishedAt
+        - meetingUrl
+      properties:
+        id: *a14
+        title: *a29
+        slug: *a30
+        shortDescription: *a31
+        course: *a24
+        scheduledAt: *a27
+        durationMinutes: *a32
+        capacity: *a33
+        remainingSeats: *a34
+        registrationDeadline: *a28
+        thumbnail: *a24
+        description: *a35
+        seo: *a36
+        createdAt: *a27
+        updatedAt: *a27
+        status: *a25
+        reservedSeats: *a37
+        publishedAt: *a28
+        meetingUrl: *a38
+    RegistrationCreateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - fullName
+        - phone
+        - targetType
+        - targetId
+        - privacyConsent
+      properties:
+        fullName:
+          type: string
+          maxLength: 200
+          minLength: 2
+        phone:
+          type: string
+          maxLength: 50
+          description:
+            Required valid phone. Egyptian national default EG; accepts international/00 prefixes
+            and Arabic digits. Stored as E.164 using libphonenumber-js/max.
+        email:
+          type: string
+          maxLength: 254
+          format: email
+        targetType:
+          type: string
+          enum:
+            - lecture
+            - course
+        targetId: *a14
+        privacyConsent:
+          type: boolean
+          enum:
+            - true
+    RegistrationReceipt:
+      type: object
+      additionalProperties: false
+      required:
+        - reference
+        - status
+      properties:
+        reference:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum:
+            - pending
+    RegistrationListItem:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - reference
+        - fullName
+        - targetType
+        - lecture
+        - course
+        - targetName
+        - status
+        - createdAt
+        - updatedAt
+      properties:
+        id: *a14
+        reference: &a40
+          type: string
+          format: uuid
+        fullName: &a41
+          type: string
+          maxLength: 200
+        targetType: &a42
+          type: string
+          enum:
+            - lecture
+            - course
+        lecture: *a24
+        course: *a24
+        targetName: &a43
+          type: string
+          maxLength: 200
+          description: Arabic target title snapshot taken at registration time.
+        status: *a39
+        createdAt: *a27
+        updatedAt: *a27
+    RegistrationAdmin:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - reference
+        - fullName
+        - targetType
+        - lecture
+        - course
+        - targetName
+        - status
+        - createdAt
+        - updatedAt
+        - phone
+        - email
+        - privacyConsentAt
+        - administrativeNotes
+      properties:
+        id: *a14
+        reference: *a40
+        fullName: *a41
+        targetType: *a42
+        lecture: *a24
+        course: *a24
+        targetName: *a43
+        status: *a39
+        createdAt: *a27
+        updatedAt: *a27
+        phone:
+          type: string
+          description: E.164
+        email:
+          type: string
+          maxLength: 254
+          format: email
+          nullable: true
+        privacyConsentAt: *a27
+        administrativeNotes:
+          type: string
+          maxLength: 5000
+    RegistrationUpdateRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        status: *a39
+        administrativeNotes:
+          type: string
+          maxLength: 5000
+      minProperties: 1
+    LecturePublicResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - success
+        - message
+        - data
+        - meta
+      properties:
+        success:
+          type: boolean
+          enum:
+            - true
+        message:
+          type: string
+        data:
+          $ref: '#/components/schemas/LecturePublic'
+        meta:
+          type: object
+          nullable: true
+          example: null
+    LecturePublicListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - success
+        - message
+        - data
+        - meta
+      properties:
+        success:
+          type: boolean
+          enum:
+            - true
+        message:
+          type: string
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/LectureCard'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+    LectureAdminResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - success
+        - message
+        - data
+        - meta
+      properties:
+        success:
+          type: boolean
+          enum:
+            - true
+        message:
+          type: string
+        data:
+          $ref: '#/components/schemas/LectureAdmin'
+        meta:
+          type: object
+          nullable: true
+          example: null
+    LectureAdminListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - success
+        - message
+        - data
+        - meta
+      properties:
+        success:
+          type: boolean
+          enum:
+            - true
+        message:
+          type: string
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/LectureAdminListItem'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+    RegistrationReceiptResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - success
+        - message
+        - data
+        - meta
+      properties:
+        success:
+          type: boolean
+          enum:
+            - true
+        message:
+          type: string
+        data:
+          $ref: '#/components/schemas/RegistrationReceipt'
+        meta:
+          type: object
+          nullable: true
+          example: null
+    RegistrationAdminResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - success
+        - message
+        - data
+        - meta
+      properties:
+        success:
+          type: boolean
+          enum:
+            - true
+        message:
+          type: string
+        data:
+          $ref: '#/components/schemas/RegistrationAdmin'
+        meta:
+          type: object
+          nullable: true
+          example: null
+    RegistrationAdminListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - success
+        - message
+        - data
+        - meta
+      properties:
+        success:
+          type: boolean
+          enum:
+            - true
+        message:
+          type: string
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/RegistrationListItem'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+    LectureAdminListItemResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - success
+        - message
+        - data
+        - meta
+      properties:
+        success:
+          type: boolean
+          enum:
+            - true
+        message:
+          type: string
+        data:
+          $ref: '#/components/schemas/LectureAdminListItem'
+        meta:
+          type: object
+          nullable: true
+          example: null
   responses:
     BadRequest:
       description: Malformed JSON body (INVALID_JSON)
