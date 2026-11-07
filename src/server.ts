@@ -10,6 +10,7 @@ import { createLogger } from './infrastructure/logging/logger.js';
 import { closeHttpServer } from './shared/utils/shutdown.js';
 import { AdminService, createAdminModel } from './modules/admins/index.js';
 import { CategoryService, createCategoryModel } from './modules/categories/index.js';
+import { CourseService, createCourseModel } from './modules/courses/index.js';
 
 export async function startServer(env: Environment, logger: Logger) {
   const database = new Database(logger);
@@ -20,6 +21,8 @@ export async function startServer(env: Environment, logger: Logger) {
     await admins.ensureIndexes();
     const categories = new CategoryService(createCategoryModel(database.connection));
     await categories.ensureIndexes();
+    const courses = new CourseService(createCourseModel(database.connection), categories);
+    await courses.ensureIndexes();
     store.on('error', () => logger.error({ code: 'SESSION_STORE_ERROR' }, 'Session store failed'));
     let stopping = false;
     const isReady = async () => {
@@ -33,7 +36,7 @@ export async function startServer(env: Environment, logger: Logger) {
       }
     };
     if (!(await isReady())) throw new Error('SESSION_STORE_UNAVAILABLE');
-    const app = createApp({ env, logger, store, admins, categories, isReady });
+    const app = createApp({ env, logger, store, admins, categories, courses, isReady });
     const server = createServer(app);
     server.requestTimeout = 30_000;
     server.headersTimeout = 15_000;
