@@ -1,5 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import {
+  createPublicSettingsRoutes,
+  createAdminSettingsRoutes,
+  type SettingsService,
+} from './modules/settings/index.js';
+import {
   createPublicArticleRoutes,
   createAdminArticleRoutes,
   type ArticleService,
@@ -62,6 +67,7 @@ export interface AppDependencies {
   registrations?: RegistrationService;
   media?: MediaService;
   articles?: ArticleService;
+  settings?: SettingsService;
 }
 
 export function createApp({
@@ -77,6 +83,7 @@ export function createApp({
   registrations,
   media,
   articles,
+  settings,
 }: AppDependencies) {
   const app = express();
   app.disable('x-powered-by');
@@ -112,6 +119,7 @@ export function createApp({
   );
   app.use(cors(corsOptions(env)));
   app.use(express.json({ limit: '100kb' }));
+  if (settings) app.use('/api/v1/settings', createPublicSettingsRoutes(settings));
   if (articles) app.use('/api/v1/articles', createPublicArticleRoutes(articles));
   if (media) app.use('/api/v1/media', createPublicMediaRoutes(media));
   if (categories) app.use('/api/v1/categories', createPublicCategoryRoutes(categories));
@@ -152,6 +160,8 @@ export function createApp({
       createSessionRoutes(env),
     );
     if (admins) {
+      if (settings)
+        app.use('/api/v1/admin/settings', createAdminSettingsRoutes(settings, admins, env));
       if (articles)
         app.use('/api/v1/admin/articles', createAdminArticleRoutes(articles, admins, env));
       if (media) app.use('/api/v1/admin/media', createAdminMediaRoutes(media, admins, env));
