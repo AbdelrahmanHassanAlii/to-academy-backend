@@ -64,6 +64,16 @@ export class ArticleService {
   private prepare(row: ArticleRecord) {
     if (row.content) row.content = content(row.content);
     if (
+      row.content &&
+      [row.content.ar, row.content.en].some((value) => value !== undefined && value.length > 30000)
+    )
+      throw new AppError(
+        400,
+        'VALIDATION_ERROR',
+        'Sanitized article content exceeds 30000 characters',
+      );
+    if (row.content && !hasArticleText(row.content.ar)) row.content = null;
+    if (
       row.status === 'published' &&
       (!row.excerpt?.ar || !row.content?.ar || !hasArticleText(row.content.ar))
     )
@@ -77,9 +87,12 @@ export class ArticleService {
   async create(raw: CreateArticleInput) {
     const input = createArticleSchema.parse(raw);
     const auto = input.slug === undefined;
-    const base = courseSlugValueSchema.parse(
+    const parsedSlug = courseSlugValueSchema.safeParse(
       input.slug ?? generatedCourseSlug(input.title.en ?? input.title.ar),
     );
+    if (!parsedSlug.success)
+      throw new AppError(400, 'VALIDATION_ERROR', 'A valid non-reserved article slug is required');
+    const base = parsedSlug.data;
     for (let attempt = 0; attempt < (auto ? 100 : 1); attempt++) {
       const suffix = attempt ? '-' + (attempt + 1) : '';
       const row = new this.model({

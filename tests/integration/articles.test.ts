@@ -2,6 +2,7 @@ import { beforeAll, afterAll, describe, it, expect } from 'vitest';
 import request from 'supertest';
 import { Types } from 'mongoose';
 import { Phase25Fixture } from '../fixtures/phase25.js';
+import { expectOpenApiFields } from '../fixtures/openapi-fields.js';
 import { ArticleService, createArticleModel } from '../../src/modules/articles/index.js';
 const f = new Phase25Fixture();
 const model = createArticleModel(f.db.connection);
@@ -26,6 +27,28 @@ afterAll(async () => {
   }
 });
 describe('articles with real media references', () => {
+  it('rejects HTML entity expansion beyond the sanitized content limit', async () => {
+    await f
+      .write('post', '/api/v1/admin/articles')
+      .send({ ...input('expanded-ar'), content: { ar: '&'.repeat(7000) } })
+      .expect(400);
+    const a = await articles.create(input('expanded-update'));
+    await f
+      .write('patch', '/api/v1/admin/articles/' + a.id)
+      .send({ content: { ar: 'محتوى', en: '&'.repeat(7000) } })
+      .expect(400);
+  });
+  it('handles fully removed draft HTML and invalid generated slugs without internal errors', async () => {
+    const res = await f
+      .write('post', '/api/v1/admin/articles')
+      .send({ ...input('empty-html'), content: { ar: '<script>alert(1)</script>' } })
+      .expect(201);
+    expect(res.body.data.content).toBeNull();
+    await f
+      .write('post', '/api/v1/admin/articles')
+      .send({ title: { ar: '!!!' } })
+      .expect(400);
+  });
   it('creates drafts, sanitizes content, publishes once, locks slugs and archives', async () => {
     const thumb = await f.image();
     const created = await f
@@ -37,6 +60,7 @@ describe('articles with real media references', () => {
       })
       .expect(201);
     const a = created.body.data;
+    expectOpenApiFields(a, 'ArticleAdmin');
     expect(a).toMatchObject({
       status: 'draft',
       publishedAt: null,
@@ -55,6 +79,7 @@ describe('articles with real media references', () => {
       .get('/api/v1/articles/' + a.slug)
       .expect(200);
     expect(publicRes.body.data).not.toHaveProperty('status');
+    expectOpenApiFields(publicRes.body.data, 'ArticlePublic');
     expect(publicRes.headers['set-cookie']).toBeUndefined();
     await f
       .write('patch', '/api/v1/admin/articles/' + a.id)
