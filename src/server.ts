@@ -1,4 +1,5 @@
 import { createServer } from 'node:http';
+import { MediaService, createMediaModel } from './modules/media/index.js';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import type { Logger } from 'pino';
@@ -21,6 +22,9 @@ export async function startServer(env: Environment, logger: Logger) {
     const store = await createSessionStore(database.connection);
     const admins = new AdminService(createAdminModel(database.connection));
     await admins.ensureIndexes();
+    const media = new MediaService(createMediaModel(database.connection));
+    await media.ensureIndexes();
+    await media.reconcile();
     const categories = new CategoryService(createCategoryModel(database.connection));
     await categories.ensureIndexes();
     const courses = new CourseService(createCourseModel(database.connection), categories);
@@ -56,6 +60,7 @@ export async function startServer(env: Environment, logger: Logger) {
       courses,
       lectures,
       registrations,
+      media,
       isReady,
     });
     const server = createServer(app);

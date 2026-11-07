@@ -1,4 +1,9 @@
 import { randomUUID } from 'node:crypto';
+import {
+  createPublicMediaRoutes,
+  createAdminMediaRoutes,
+  type MediaService,
+} from './modules/media/index.js';
 import express, { type Router } from 'express';
 import type { Store } from 'express-session';
 import cors from 'cors';
@@ -50,6 +55,7 @@ export interface AppDependencies {
   courses?: CourseService;
   lectures?: LectureService;
   registrations?: RegistrationService;
+  media?: MediaService;
 }
 
 export function createApp({
@@ -63,6 +69,7 @@ export function createApp({
   courses,
   lectures,
   registrations,
+  media,
 }: AppDependencies) {
   const app = express();
   app.disable('x-powered-by');
@@ -98,6 +105,7 @@ export function createApp({
   );
   app.use(cors(corsOptions(env)));
   app.use(express.json({ limit: '100kb' }));
+  if (media) app.use('/api/v1/media', createPublicMediaRoutes(media));
   if (categories) app.use('/api/v1/categories', createPublicCategoryRoutes(categories));
   if (courses) app.use('/api/v1/courses', createPublicCourseRoutes(courses));
   if (lectures) app.use('/api/v1/lectures', createPublicLectureRoutes(lectures));
@@ -136,6 +144,7 @@ export function createApp({
       createSessionRoutes(env),
     );
     if (admins) {
+      if (media) app.use('/api/v1/admin/media', createAdminMediaRoutes(media, admins, env));
       app.use('/api/v1/auth', createAuthRoutes(admins, env));
       app.use('/api/v1/admin/admins', createAdminRoutes(admins, env));
       if (categories)
