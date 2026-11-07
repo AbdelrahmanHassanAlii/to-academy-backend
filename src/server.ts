@@ -11,6 +11,8 @@ import { closeHttpServer } from './shared/utils/shutdown.js';
 import { AdminService, createAdminModel } from './modules/admins/index.js';
 import { CategoryService, createCategoryModel } from './modules/categories/index.js';
 import { CourseService, createCourseModel } from './modules/courses/index.js';
+import { LectureService, createLectureModel } from './modules/lectures/index.js';
+import { RegistrationService, createRegistrationModel } from './modules/registrations/index.js';
 
 export async function startServer(env: Environment, logger: Logger) {
   const database = new Database(logger);
@@ -23,6 +25,15 @@ export async function startServer(env: Environment, logger: Logger) {
     await categories.ensureIndexes();
     const courses = new CourseService(createCourseModel(database.connection), categories);
     await courses.ensureIndexes();
+    const lectures = new LectureService(createLectureModel(database.connection), courses);
+    await lectures.ensureIndexes();
+    const registrations = new RegistrationService(
+      createRegistrationModel(database.connection),
+      lectures,
+      courses,
+    );
+    await registrations.assertTransactionSupport();
+    await registrations.ensureIndexes();
     store.on('error', () => logger.error({ code: 'SESSION_STORE_ERROR' }, 'Session store failed'));
     let stopping = false;
     const isReady = async () => {
@@ -36,7 +47,17 @@ export async function startServer(env: Environment, logger: Logger) {
       }
     };
     if (!(await isReady())) throw new Error('SESSION_STORE_UNAVAILABLE');
-    const app = createApp({ env, logger, store, admins, categories, courses, isReady });
+    const app = createApp({
+      env,
+      logger,
+      store,
+      admins,
+      categories,
+      courses,
+      lectures,
+      registrations,
+      isReady,
+    });
     const server = createServer(app);
     server.requestTimeout = 30_000;
     server.headersTimeout = 15_000;
@@ -101,7 +122,7 @@ async function main(): Promise<void> {
     const message =
       error instanceof Error && error.message.startsWith('Invalid environment configuration:')
         ? error.message
-        : 'Startup failed: check MongoDB connectivity, session-store access and listen port';
+        : 'Startup failed: check MongoDB replica-set connectivity, session-store access and listen port';
     logger.fatal({ code: 'STARTUP_FAILED' }, message);
     process.exitCode = 1;
   }

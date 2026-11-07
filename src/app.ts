@@ -28,6 +28,16 @@ import {
   createAdminCourseRoutes,
   type CourseService,
 } from './modules/courses/index.js';
+import {
+  createPublicLectureRoutes,
+  createAdminLectureRoutes,
+  type LectureService,
+} from './modules/lectures/index.js';
+import {
+  createPublicRegistrationRoutes,
+  createAdminRegistrationRoutes,
+  type RegistrationService,
+} from './modules/registrations/index.js';
 
 export interface AppDependencies {
   env: Environment;
@@ -38,6 +48,8 @@ export interface AppDependencies {
   admins?: AdminService;
   categories?: CategoryService;
   courses?: CourseService;
+  lectures?: LectureService;
+  registrations?: RegistrationService;
 }
 
 export function createApp({
@@ -49,6 +61,8 @@ export function createApp({
   admins,
   categories,
   courses,
+  lectures,
+  registrations,
 }: AppDependencies) {
   const app = express();
   app.disable('x-powered-by');
@@ -86,6 +100,9 @@ export function createApp({
   app.use(express.json({ limit: '100kb' }));
   if (categories) app.use('/api/v1/categories', createPublicCategoryRoutes(categories));
   if (courses) app.use('/api/v1/courses', createPublicCourseRoutes(courses));
+  if (lectures) app.use('/api/v1/lectures', createPublicLectureRoutes(lectures));
+  if (registrations)
+    app.use('/api/v1/registrations', createPublicRegistrationRoutes(registrations, env));
   app.get('/api/v1/health', (_req, res) => {
     res.setHeader('Cache-Control', 'no-store');
     success(res, { status: 'ok' }, 'Service is alive');
@@ -124,6 +141,13 @@ export function createApp({
       if (categories)
         app.use('/api/v1/admin/categories', createAdminCategoryRoutes(categories, admins, env));
       if (courses) app.use('/api/v1/admin/courses', createAdminCourseRoutes(courses, admins, env));
+      if (lectures)
+        app.use('/api/v1/admin/lectures', createAdminLectureRoutes(lectures, admins, env));
+      if (registrations)
+        app.use(
+          '/api/v1/admin/registrations',
+          createAdminRegistrationRoutes(registrations, admins, env),
+        );
     }
     if (additionalRoutes) app.use('/api/v1', additionalRoutes);
   } else {
