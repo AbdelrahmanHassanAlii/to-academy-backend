@@ -34,6 +34,7 @@ let store: MongoStore;
 let app: ReturnType<typeof createApp>;
 let agent: ReturnType<typeof request.agent>;
 let token: string;
+let authCookie: string;
 let png: Buffer;
 const sessions = new Set<string>();
 beforeAll(async () => {
@@ -55,7 +56,12 @@ beforeAll(async () => {
         .set('Origin', origin)
         .set('X-CSRF-Token', token)
         .send({ email, password })
-        .expect(200);
+        .expect(200)
+        .then((login) => {
+          authCookie = (login.headers['set-cookie'] as unknown as string[])
+            .map((value) => value.split(';')[0])
+            .join('; ');
+        });
   }
   png = await sharp({ create: { width: 8, height: 8, channels: 3, background: '#ffbb00' } })
     .png()
@@ -238,10 +244,62 @@ describe('real GridFS uploads and privacy', () => {
     try {
       const address = server.address();
       if (!address || typeof address === 'string') throw new Error('Missing address');
-      const cookie = (await agent.get('/api/v1/auth/me').expect(200)).headers['set-cookie'];
-      // The authenticated agent already exercises multipart; this raw request deliberately tests
-      // interrupted chunked input with its session cookie copied from the agent cookie jar.
-      expect(cookie).toBeUndefined();
+      const bytes = await sharp(randomBytes(256 * 256 * 3), {
+        raw: { width: 256, height: 256, channels: 3 },
+      })
+        .png({ compressionLevel: 0 })
+        .toBuffer();
+      const uploaded = await new Promise<{ status: number; id: string }>((resolve, reject) => {
+        const r = httpRequest(
+          {
+            hostname: '127.0.0.1',
+            port: address.port,
+            path: '/api/v1/admin/media',
+            method: 'POST',
+            headers: {
+              'Content-Type': 'multipart/form-data; boundary=chunked',
+              'Transfer-Encoding': 'chunked',
+              Cookie: authCookie,
+              Origin: origin,
+              'X-CSRF-Token': token,
+            },
+          },
+          (response) => {
+            let body = '';
+            response.setEncoding('utf8');
+            response.on('data', (chunk) => {
+              body += String(chunk);
+            });
+            response.on('end', () => {
+              resolve({
+                status: response.statusCode!,
+                id: (JSON.parse(body) as { data: { id: string } }).data.id,
+              });
+            });
+          },
+        );
+        r.on('error', reject);
+        void (async () => {
+          r.write(
+            '--chunked\r\nContent-Disposition: form-data; name="visibility"\r\n\r\npublic\r\n--chunked\r\nContent-Disposition: form-data; name="file"; filename="chunked.png"\r\nContent-Type: image/png\r\n\r\n',
+          );
+          for (let offset = 0; offset < bytes.length; offset += 4096) {
+            if (!r.write(bytes.subarray(offset, offset + 4096)))
+              await new Promise<void>((resolveDrain) => r.once('drain', resolveDrain));
+          }
+          r.end('\r\n--chunked--\r\n');
+        })().catch(reject);
+      });
+      expect(uploaded.status).toBe(201);
+      expect(
+        await db.connection
+          .collection(MEDIA_BUCKET + '.chunks')
+          .countDocuments({ files_id: new Types.ObjectId(uploaded.id) }),
+      ).toBeGreaterThan(1);
+      const received = await fetch(
+        'http://127.0.0.1:' + address.port + '/api/v1/media/' + uploaded.id,
+      );
+      expect(Buffer.from(await received.arrayBuffer())).toEqual(bytes);
       const staged = await media.stage(
         Readable.from([...png].map((byte) => Buffer.from([byte]))),
         'image/png',
@@ -280,5 +338,26 @@ describe('real GridFS uploads and privacy', () => {
         server.close((e) => (e ? reject(e) : resolve())),
       );
     }
+  });
+  it('cleans truncated multipart bodies without uncaught stream errors', async () => {
+    const before = await model.countDocuments({ uploadedBy: uploader });
+    await write('post', '/api/v1/admin/media')
+      .set('Content-Type', 'multipart/form-data; boundary=broken')
+      .send(
+        Buffer.concat([
+          Buffer.from(
+            '--broken\r\nContent-Disposition: form-data; name="file"; filename="broken.png"\r\nContent-Type: image/png\r\n\r\n',
+          ),
+          png,
+        ]),
+      )
+      .expect(400);
+    expect(await model.countDocuments({ uploadedBy: uploader })).toBe(before);
+  });
+  it('retries interrupted deletion without requiring an application restart', async () => {
+    const id = await upload();
+    await model.updateOne({ _id: id }, { $set: { state: 'deleting' } });
+    await write('delete', '/api/v1/admin/media/' + id).expect(200);
+    expect(await model.findById(id)).toBeNull();
   });
 });

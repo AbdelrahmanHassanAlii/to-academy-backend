@@ -45,25 +45,34 @@ export class MediaService {
     const check = new ImageValidationStream(mime);
     const id = new Types.ObjectId();
     const filename = randomUUID() + '.' + IMAGE_EXTENSIONS[mime];
-    await this.model.create({
-      _id: id,
-      gridfsId: id,
-      filename,
-      mimeType: mime,
-      originalFilename: safeOriginalName(originalName),
-      uploadedBy: adminId,
-    });
-    const upload = this.bucket.openUploadStreamWithId(id, filename, {
-      metadata: { mediaId: id, schemaVersion: 1 },
-    });
+    let sourceError: Error | undefined;
+    let streaming = false;
+    const inputError = (error: Error) => {
+      sourceError = error;
+      if (streaming) check.destroy(error);
+    };
+    stream.on('error', inputError);
     try {
-      const inputError = (error: Error) => check.destroy(error);
-      stream.once('error', inputError);
+      await this.model.create({
+        _id: id,
+        gridfsId: id,
+        filename,
+        mimeType: mime,
+        originalFilename: safeOriginalName(originalName),
+        uploadedBy: adminId,
+      });
+      const upload = this.bucket.openUploadStreamWithId(id, filename, {
+        metadata: { mediaId: id, schemaVersion: 1 },
+      });
+      if (sourceError || stream.destroyed) {
+        upload.destroy();
+        throw sourceError ?? new Error('Upload interrupted');
+      }
+      streaming = true;
       stream.pipe(check);
       try {
         await pipeline(check, upload);
       } finally {
-        stream.off('error', inputError);
         stream.unpipe(check);
         stream.resume();
       }
@@ -90,6 +99,10 @@ export class MediaService {
       if (error instanceof AppError) throw error;
       if (error instanceof Error && /Mongo/.test(error.name)) throw error;
       throw new AppError(415, 'INVALID_IMAGE', 'Malformed or unsupported image');
+    } finally {
+      stream.off('error', inputError);
+      stream.unpipe(check);
+      stream.resume();
     }
   }
   async finish(id: string, visibility: 'private' | 'public') {
@@ -167,7 +180,7 @@ export class MediaService {
   async remove(id: string) {
     await this.model.db.transaction(async (session) => {
       const row = await this.model.findOneAndUpdate(
-        { _id: id, state: 'ready' },
+        { _id: id, state: { $in: ['ready', 'deleting'] } },
         { $inc: { guard: 1 } },
         { session, returnDocument: 'after' },
       );

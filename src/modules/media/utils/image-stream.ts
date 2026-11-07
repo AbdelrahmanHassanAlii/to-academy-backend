@@ -1,5 +1,6 @@
 import { Transform, type TransformCallback } from 'node:stream';
 import { AppError } from '../../../shared/errors/app-error.js';
+import { PngContainer } from './image-container.js';
 export const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
 export const IMAGE_EXTENSIONS: Record<string, string> = {
   'image/jpeg': 'jpg',
@@ -10,6 +11,8 @@ export class ImageValidationStream extends Transform {
   size = 0;
   private prefix = Buffer.alloc(0);
   private checked = false;
+  private readonly png = new PngContainer();
+  private tail: Buffer = Buffer.alloc(0);
   constructor(private readonly mime: string) {
     super();
     if (!IMAGE_EXTENSIONS[mime])
@@ -36,6 +39,10 @@ export class ImageValidationStream extends Transform {
       this.size += chunk.length;
       if (this.size > MAX_IMAGE_SIZE)
         throw new AppError(413, 'IMAGE_TOO_LARGE', 'Maximum image size is 5 MiB');
+      if (this.mime === 'image/png') this.png.write(chunk);
+      if (this.mime === 'image/jpeg')
+        this.tail =
+          chunk.length >= 2 ? chunk.subarray(-2) : Buffer.concat([this.tail, chunk]).subarray(-2);
       if (!this.checked) {
         const take = Math.min(12 - this.prefix.length, chunk.length);
         this.prefix = Buffer.concat([this.prefix, chunk.subarray(0, take)]);
@@ -56,6 +63,13 @@ export class ImageValidationStream extends Transform {
         this.check();
         this.push(this.prefix);
       }
+      if (this.mime === 'image/png') this.png.finish();
+      if (
+        (this.mime === 'image/jpeg' && !this.tail.equals(Buffer.from([255, 217]))) ||
+        (this.mime === 'image/webp' &&
+          (this.prefix.length < 12 || this.prefix.readUInt32LE(4) + 8 !== this.size))
+      )
+        throw new AppError(415, 'INVALID_IMAGE_CONTAINER', 'Incomplete or invalid image container');
       cb();
     } catch (error) {
       cb(error as Error);

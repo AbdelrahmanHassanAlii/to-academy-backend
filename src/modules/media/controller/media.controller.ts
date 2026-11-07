@@ -14,6 +14,7 @@ export function mediaController(service: MediaService) {
     try {
       parser = busboy({
         headers: req.headers,
+        defParamCharset: 'utf8',
         limits: {
           fileSize: MAX_IMAGE_SIZE + 1,
           files: 1,
@@ -45,6 +46,9 @@ export function mediaController(service: MediaService) {
       }
     });
     parser.on('file', (name, stream, info) => {
+      stream.on('error', () => {
+        failure ??= new AppError(400, 'INVALID_MULTIPART', 'Incomplete multipart request');
+      });
       files++;
       if (name !== 'file' || files > 1) {
         bad();
