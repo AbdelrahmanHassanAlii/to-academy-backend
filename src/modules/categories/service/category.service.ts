@@ -10,6 +10,7 @@ import {
   categoryDto,
   escapeCategorySearch,
   isDuplicateCategory,
+  INITIAL_CATEGORIES,
 } from '../utils/index.js';
 import { AppError } from '../../../shared/errors/app-error.js';
 
@@ -121,4 +122,34 @@ export class CategoryService {
     return this.update(id, { isActive: false });
   }
 
+  async seedInitial() {
+    let created = 0;
+    for (const category of INITIAL_CATEGORIES) {
+      try {
+        const now = new Date();
+        const result = await this.model
+          .updateOne(
+            { slug: category.slug },
+            {
+              $setOnInsert: {
+                ...category,
+                isActive: true,
+                image: null,
+                description: {},
+                createdAt: now,
+                updatedAt: now,
+              },
+            },
+            { upsert: true, runValidators: true, setDefaultsOnInsert: true, timestamps: false },
+          )
+          .exec();
+        created += result.upsertedCount;
+      } catch (error) {
+        // Another seed may win a concurrent insert. Only swallow the expected same-slug conflict.
+        if (!isDuplicateCategory(error) || !(await this.model.exists({ slug: category.slug })))
+          throw error;
+      }
+    }
+    return { created, existing: INITIAL_CATEGORIES.length - created };
+  }
 }

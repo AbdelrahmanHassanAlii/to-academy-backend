@@ -26,6 +26,7 @@
     "test:integration": "node --env-file-if-exists=.env --import tsx node_modules/vitest/vitest.mjs run tests/integration",
     "api:check": "tsx scripts/check-openapi.ts",
     "seed:admin": "node --env-file-if-exists=.env --import tsx scripts/seed-admin.ts",
+    "seed:categories": "node --env-file-if-exists=.env --import tsx scripts/seed-categories.ts",
     "db:check": "node --env-file-if-exists=.env --import tsx scripts/check-database.ts"
   },
   "dependencies": {
