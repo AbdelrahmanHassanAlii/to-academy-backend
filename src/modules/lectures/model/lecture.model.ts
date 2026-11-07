@@ -84,6 +84,7 @@ export function createLectureModel(connection: Connection): Model<LectureRecord>
       this.invalidate('status', 'Publication requires descriptions');
   });
   schema.index({ slug: 1 }, { unique: true });
+  schema.index({ thumbnail: 1 });
   schema.index({ status: 1, scheduledAt: 1, _id: 1 });
   schema.index({ course: 1, status: 1, scheduledAt: 1, _id: 1 });
   schema.index({ createdAt: -1, _id: -1 });

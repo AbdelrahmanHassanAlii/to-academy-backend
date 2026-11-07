@@ -1,4 +1,5 @@
 import { Types, type Model, type SortOrder, type ClientSession } from 'mongoose';
+import { MediaReferences } from '../../../infrastructure/storage/media-references.js';
 import type { CourseRecord } from '../model/index.js';
 import type { CourseQuery, CreateCourseInput, UpdateCourseInput } from '../validators/index.js';
 import {
@@ -192,7 +193,13 @@ export class CourseService {
       await this.validateState(course);
       if (course.status === 'published') course.publishedAt = new Date();
       try {
-        await course.save();
+        await new MediaReferences(this.model.db).run(
+          course.thumbnail?.toString(),
+          course.status === 'published',
+          async (session) => {
+            await course.save({ session: session ?? null });
+          },
+        );
         return adminDto(course);
       } catch (error) {
         if (!isDuplicateCourse(error)) throw error;
@@ -218,7 +225,13 @@ export class CourseService {
     await this.validateState(course);
     if (course.status === 'published' && !course.publishedAt) course.publishedAt = new Date();
     try {
-      await course.save();
+      await new MediaReferences(this.model.db).run(
+        course.thumbnail?.toString(),
+        course.status === 'published',
+        async (session) => {
+          await course.save({ session: session ?? null });
+        },
+      );
       return adminDto(course);
     } catch (error) {
       if (isDuplicateCourse(error)) throw conflict();

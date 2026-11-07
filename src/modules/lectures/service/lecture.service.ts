@@ -1,4 +1,5 @@
 import { Types, type Model, type SortOrder, type ClientSession } from 'mongoose';
+import { MediaReferences } from '../../../infrastructure/storage/media-references.js';
 import type { LectureRecord } from '../model/index.js';
 import {
   createLectureSchema,
@@ -147,7 +148,13 @@ export class LectureService {
       await this.validateState(row, row.status === 'published');
       if (row.status === 'published') row.publishedAt = new Date();
       try {
-        await row.save();
+        await new MediaReferences(this.model.db).run(
+          row.thumbnail?.toString(),
+          row.status === 'published',
+          async (session) => {
+            await row.save({ session: session ?? null });
+          },
+        );
         return adminDto(row);
       } catch (error) {
         if (!isDuplicateCourse(error)) throw error;
@@ -175,7 +182,13 @@ export class LectureService {
     await this.validateState(row, row.status === 'published' && oldStatus !== 'published');
     if (row.status === 'published' && !row.publishedAt) row.publishedAt = new Date();
     try {
-      await row.save();
+      await new MediaReferences(this.model.db).run(
+        row.thumbnail?.toString(),
+        row.status === 'published',
+        async (session) => {
+          await row.save({ session: session ?? null });
+        },
+      );
       return adminDto(row, includeMeeting);
     } catch (error) {
       if (isDuplicateCourse(error))

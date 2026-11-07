@@ -54,6 +54,7 @@ export function createArticleModel(connection: Connection): Model<ArticleRecord>
     { timestamps: true, autoIndex: false, strict: 'throw', optimisticConcurrency: true },
   );
   schema.index({ slug: 1 }, { unique: true });
+  schema.index({ thumbnail: 1 });
   schema.index({ status: 1, featured: 1, createdAt: -1, _id: -1 });
   schema.index({ status: 1, createdAt: -1, _id: -1 });
   return connection.model<ArticleRecord>('Article', schema);
