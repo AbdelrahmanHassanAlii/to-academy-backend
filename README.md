@@ -1,6 +1,6 @@
 # TO Academy backend
 
-Phase 2.1: Express/TypeScript foundation plus administrator authentication, protected profile access and secure CLI provisioning. Three repositories remain independent; this project runs directly on the host. See the [authentication and seed runbook](docs/authentication.md).
+Phase 2.2: Express/TypeScript foundation, administrator authentication and localized Categories management. Three repositories remain independent; this project runs directly on the host. See [Categories and seed instructions](docs/categories.md), [authentication](docs/authentication.md), and [commit hooks](docs/contributing.md).
 
 ## Requirements and installation
 
@@ -14,6 +14,7 @@ From this repository, using PowerShell:
 node --version
 npm --version
 npm ci
+npm run hooks:install
 Copy-Item .env.example .env
 node -e "console.log(require('node:crypto').randomBytes(48).toString('base64url'))"
 ```
@@ -85,6 +86,8 @@ This opens a real Mongoose connection, issues MongoDB `ping`, and closes it. Suc
 
 ## Run and commands
 
+`npm run seed:categories` creates missing initial categories without overwriting administrator edits. Public active-only and protected admin category endpoints are documented in the [category runbook](docs/categories.md). Commitlint/Husky checks future commit messages; because dependency lifecycle scripts remain disabled, run `npm run hooks:install` after cloning/installing.
+
 `npm run seed:admin` provisions an administrator using ephemeral SEED_ADMIN_NAME, SEED_ADMIN_EMAIL and SEED_ADMIN_PASSWORD inputs; see the [secure prompt-based instructions](docs/authentication.md#secure-cli-provisioning). It refuses duplicate email and prints no credentials. Provisioning needs full dependencies because the CLI uses tsx; the production API runtime does not.
 
 ```powershell
@@ -121,7 +124,7 @@ Authentication adds `POST /api/v1/auth/login`, `POST /api/v1/auth/logout`, `GET 
 | `GET /api/v1/openapi.json` | Authoritative implemented OpenAPI document                                              |
 | `GET /api/v1/docs/`        | Swagger UI (read-only)                                                                  |
 
-All API JSON successes: `{success:true,message,data,meta:null}`; errors: `{success:false,message,code,errors:[]}`. Raw OpenAPI JSON/Swagger assets are documentation exceptions. Unknown endpoints return JSON 404, including future business endpoints. OpenAPI paths cover implemented operations only; infrastructure documentation endpoints need no recursive self-description. Health responses are minimal and no-store. Readiness checks dependency access, not business migrations/fixtures that do not exist yet.
+API JSON successes use `{success:true,message,data,meta}`: meta is null for single records and pagination metadata for lists. Errors: `{success:false,message,code,errors:[]}`. Raw OpenAPI JSON/Swagger assets are documentation exceptions. Unknown endpoints return JSON 404, including future business endpoints. OpenAPI paths cover implemented operations only; infrastructure documentation endpoints need no recursive self-description. Health responses are minimal and no-store. Readiness checks dependency access, not business migrations/fixtures that do not exist yet.
 
 Manual checks:
 
@@ -161,4 +164,4 @@ npm run db:check
 
 Use a dedicated test database, never the application DB. Integration checks fail closed unless its URI names `to_academy_test` or `to_academy_test_<suffix>`; they do not drop databases/collections and delete only session records they create. An explicit test URI is mandatory; absence is a failed setup, not a silent skip. Missing MongoDB is an environment blocker, not a passing integration suite. Unit tests use MemoryStore only in test fixtures to verify middleware policy; persistence tests use real connect-mongo.
 
-See [Phase 2.1 report](docs/phase-2-1-verification.md) and [authentication runbook](docs/authentication.md) for current endpoints, seed instructions and security behavior. The [Phase 1 report](docs/phase-1-verification.md) and approved Phase 0 documents remain historical records: [architecture](docs/phase-0-architecture.md), [audit](docs/repository-audit.md), [API plan](docs/api-contract.md). Phase 1 was published in nine commits; Phase 2.1 remains local pending push approval. Frontend repositories remain untouched.
+See [Phase 2.2 report](docs/phase-2-2-verification.md), [Categories](docs/categories.md), and [authentication](docs/authentication.md) for current behavior. [Phase 2.1](docs/phase-2-1-verification.md), [Phase 1](docs/phase-1-verification.md), and approved Phase 0 documents remain historical records: [architecture](docs/phase-0-architecture.md), [audit](docs/repository-audit.md), [API plan](docs/api-contract.md). Phase 2.1 was published; Phase 2.2 stays local pending push approval. Frontend repositories remain untouched.
