@@ -1,12 +1,12 @@
 # TO Academy backend
 
-Phase 2.3: Express/TypeScript foundation, administrator authentication, localized Categories and Courses management. Three repositories remain independent; this project runs directly on the host. See [Courses](docs/courses.md), [Phase 2.4 plan](docs/phase-2-4-plan.md), [Categories and seed instructions](docs/categories.md), [authentication](docs/authentication.md), and [commit hooks](docs/contributing.md).
+Phase 2.4: Express/TypeScript foundation, administrator authentication, Categories, Courses, Lectures and Registrations. Three repositories remain independent. See [Lectures](docs/lectures.md), [Registrations](docs/registrations.md), [MongoDB replica-set setup](docs/mongodb-replica-set.md), [Courses](docs/courses.md), [Categories](docs/categories.md), [authentication](docs/authentication.md) and [commit hooks](docs/contributing.md).
 
 ## Requirements and installation
 
 - **Node.js 24.22.1 LTS**, pinned in `.nvmrc`; use a version manager or official host installer. Engine range requires at least this patched release on Node 24. The implementation was verified on 24.22.1. Recheck security patches before deployment.
 - **npm 11**, pinned tool version 11.19.1 in `packageManager`.
-- Local MongoDB 7+ or a reachable Atlas database. The installed local MongoDB 7.0 instance was verified during Phase 1; an executable alone is insufficient.
+- MongoDB 7+ initialized replica set or Atlas. Standalone MongoDB is insufficient for registration transactions and startup fails closed. See [host replica-set setup](docs/mongodb-replica-set.md).
 
 From this repository, using PowerShell:
 
@@ -33,7 +33,7 @@ Node loads `.env` for dev/start/database-check/integration commands. OS environm
 | --------------------- | ----------------------------------------------------------------------------------------------------- |
 | `NODE_ENV`            | `development`, `test` or `production`; explicit                                                       |
 | `PORT`                | `4000`; integer 1..65535                                                                              |
-| `MONGODB_URI`         | `mongodb://127.0.0.1:27017/to_academy` or private Atlas URI                                           |
+| `MONGODB_URI`         | `mongodb://127.0.0.1:27024/to_academy?replicaSet=toacademyTest` or private Atlas URI                  |
 | `SESSION_SECRET`      | Required high-entropy random secret; example generation above; never shared with browser              |
 | `SESSION_COOKIE_NAME` | `toacademy.sid`; token-safe name                                                                      |
 | `PUBLIC_APP_URL`      | Exact origin `http://localhost:5173`                                                                  |
@@ -60,21 +60,7 @@ Set MongoDB URI and a generated secret through the host's private environment ma
 
 ## MongoDB directly on the host
 
-For an existing Windows service, inspect/start it from a suitably privileged terminal when needed:
-
-```powershell
-Get-Service MongoDB
-Start-Service MongoDB
-```
-
-If MongoDB is installed without a service, create a data directory you own, then run its host executable in another terminal:
-
-```powershell
-New-Item -ItemType Directory -Force "$env:LOCALAPPDATA/TOAcademy/mongodb"
-& 'C:/Program Files/MongoDB/Server/7.0/bin/mongod.exe' --dbpath "$env:LOCALAPPDATA/TOAcademy/mongodb" --bind_ip 127.0.0.1 --port 27017
-```
-
-Do not start a second process if port 27017 is already occupied. Local MongoDB should bind to loopback. Enable appropriate database authentication and private network restrictions for production.
+Follow [MongoDB replica-set setup](docs/mongodb-replica-set.md) for a new isolated local instance, URI examples and one-time initialization. Existing standalone services must be deliberately configured by an operator; this implementation does not change their configuration or data. Bind local test servers to loopback. A single-member development replica set supports transactions but does not provide production failover.
 
 For Atlas: create the database/user, grant the application read/write and index-creation access only to its database, allow the actual backend IP in Atlas Network Access, and put the SRV URI in private `MONGODB_URI`. Encode password URI characters. Use TLS defaults; do not disable certificate validation. A separate test DB/user is strongly preferred for integration checks.
 
@@ -136,7 +122,7 @@ Invoke-RestMethod http://localhost:4000/api/v1/auth/csrf -Headers @{ Origin='htt
 
 ## Security and session architecture
 
-Helmet, explicit credentialed CORS, 100 KiB JSON limit, structured Pino request logs, generated request ids, centralized safe errors, Zod validation and reusable IP rate limiting are installed. Logs include method/path (without query), request id/status/latency; headers, cookies, body/PII, tokens, raw errors and Mongo URI are excluded. No logger serializes raw startup errors. Validation provides parsed body/query/params in `res.locals.validated`; services/controllers in later phases must consume validated data. Rate limiting uses process-local memory: suitable for the initial one-process API only, resets on restart, and must use shared enforcement before scaling instances. CSRF issuance and login are rate limited; registration policies belong to the later registration module.
+Helmet, explicit credentialed CORS, 100 KiB JSON limit, structured Pino request logs, generated request ids, centralized safe errors, Zod validation and reusable IP rate limiting are installed. Logs include method/path (without query), request id/status/latency; headers, cookies, body/PII, tokens, raw errors and Mongo URI are excluded. No logger serializes raw startup errors. Validation provides parsed body/query/params in `res.locals.validated`; services/controllers in later phases must consume validated data. Rate limiting uses process-local memory: suitable for the initial one-process API only, resets on restart, and must use shared enforcement before scaling instances. CSRF issuance and login are rate limited; public registration uses 30 attempts per 15 minutes/IP, strict JSON and exact trusted Origin without a session or CSRF dependency.
 
 Session behavior:
 
@@ -155,13 +141,13 @@ npm run typecheck
 npm run lint
 npm run format:check
 npm test
-$env:TEST_MONGODB_URI='mongodb://127.0.0.1:27017/to_academy_test'
+$env:TEST_MONGODB_URI='mongodb://127.0.0.1:27024/to_academy_test?replicaSet=toacademyTest'
 npm run test:integration
 npm run api:check
 npm run build
 npm run db:check
 ```
 
-Use a dedicated test database, never the application DB. Integration checks fail closed unless its URI names `to_academy_test` or `to_academy_test_<suffix>`; they do not drop databases/collections and delete only session records they create. An explicit test URI is mandatory; absence is a failed setup, not a silent skip. Missing MongoDB is an environment blocker, not a passing integration suite. Unit tests use MemoryStore only in test fixtures to verify middleware policy; persistence tests use real connect-mongo.
+Use a dedicated test database, never the application DB. Integration checks fail closed unless its URI names `to_academy_test` or `to_academy_test_<suffix>`; they do not drop databases/collections and clean only owned fixtures. The transaction rollback test temporarily changes a validator in its dedicated test database; do not run it against shared data. An explicit test URI is mandatory; absence is a failed setup, not a silent skip. Missing MongoDB is an environment blocker, not a passing integration suite. Unit tests use MemoryStore only in test fixtures to verify middleware policy; persistence tests use real connect-mongo.
 
-See [Phase 2.2 report](docs/phase-2-2-verification.md), [Categories](docs/categories.md), and [authentication](docs/authentication.md) for current behavior. [Phase 2.1](docs/phase-2-1-verification.md), [Phase 1](docs/phase-1-verification.md), and approved Phase 0 documents remain historical records: [architecture](docs/phase-0-architecture.md), [audit](docs/repository-audit.md), [API plan](docs/api-contract.md). Phase 2.1 was published; Phase 2.2 stays local pending push approval. Frontend repositories remain untouched.
+See [Phase 2.4 verification](docs/phase-2-4-verification.md), [Lectures](docs/lectures.md) and [Registrations](docs/registrations.md). Phase 2.3 is published; Phase 2.4 remains local pending owner review. Earlier phase reports remain historical records. Articles, Settings and Media are the next milestone. Frontend repositories remain untouched.

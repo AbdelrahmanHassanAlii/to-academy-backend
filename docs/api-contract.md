@@ -1,6 +1,6 @@
 # API contract plan — v1
 
-Phase 0 design, updated through Phase 2.3 on 2026-11-07. Foundation, auth, Categories and Courses are implemented; other modules remain planned. This document is the implementation plan; `docs/openapi.yaml` will become the authoritative machine-readable contract as endpoints are implemented in Phases 1-2. Do not generate frontend types from invented or incomplete behavior. See [architecture](phase-0-architecture.md) for security, relationships, lifecycle and environment decisions.
+Phase 0 design, updated through Phase 2.4 on 2026-11-08. Foundation, auth, Categories, Courses, Lectures and Registrations are implemented; other modules remain planned. This document is the implementation plan; `docs/openapi.yaml` will become the authoritative machine-readable contract as endpoints are implemented in Phases 1-2. Do not generate frontend types from invented or incomplete behavior. See [architecture](phase-0-architecture.md) for security, relationships, lifecycle and environment decisions.
 
 ## Conventions
 
@@ -45,7 +45,7 @@ Paths below include `/api/v1` implicitly. `Session` = authenticated active admin
 | GET | `/courses` | Public | Published + active category only; filters `category` slug, `q`, `featured`, `sort`; paginated |
 | GET | `/courses/featured` | Public | Featured published courses; same pagination/filters |
 | GET | `/courses/:slug` | Public | Public course detail or 404 |
-| GET | `/lectures` | Public | Published only; `upcoming=true` for scheduledAt>=now; paginated |
+| GET | `/lectures` | Public | Published only; `period=upcoming|past`, related course id, q and sort; paginated |
 | GET | `/lectures/:slug` | Public | Public lecture detail, never meetingUrl |
 | GET | `/articles` | Public | Published nonfuture articles only, paginated, `q` |
 | GET | `/articles/:slug` | Public | Public article and safe author display name |
@@ -56,26 +56,26 @@ Paths below include `/api/v1` implicitly. `Session` = authenticated active admin
 | POST | `/admin/categories` | Session + CSRF | Category input -> created record |
 | GET | `/admin/categories/:id` | Session | Editable record |
 | PATCH | `/admin/categories/:id` | Session + CSRF | Partial category input |
-| DELETE | `/admin/categories/:id` | Session + CSRF | Delete unused only, else 409 |
+| DELETE | `/admin/categories/:id` | Session + CSRF | Soft deactivate |
 | GET | `/admin/courses` | Session | Filter `status`, category id, `q`; paginated |
 | POST | `/admin/courses` | Session + CSRF | Course input -> record |
 | GET | `/admin/courses/:id` | Session | Includes drafts/archive |
 | PATCH | `/admin/courses/:id` | Session + CSRF | Includes publish/unpublish/archive via status |
-| DELETE | `/admin/courses/:id` | Session + CSRF | 409 if registrations; prefer archive |
+| DELETE | `/admin/courses/:id` | Session + CSRF | Soft archive and retain references |
 | GET | `/admin/lectures` | Session | Filter status and schedule; paginated |
 | POST | `/admin/lectures` | Session + CSRF | Lecture input, private meetingUrl allowed |
 | GET | `/admin/lectures/:id` | Session | Includes meetingUrl |
 | PATCH | `/admin/lectures/:id` | Session + CSRF | Schedule, edit link, publish/complete/cancel |
-| DELETE | `/admin/lectures/:id` | Session + CSRF | 409 if registrations |
+| DELETE | `/admin/lectures/:id` | Session + CSRF | Always soft cancel; retain registrations; omit meetingUrl |
 | GET | `/admin/articles` | Session | Filter status, `q`; paginated |
 | POST | `/admin/articles` | Session + CSRF | Article input; author=current admin |
 | GET | `/admin/articles/:id` | Session | Includes drafts |
 | PATCH | `/admin/articles/:id` | Session + CSRF | Content/SEO/status; server manages publishedAt |
 | DELETE | `/admin/articles/:id` | Session + CSRF | Delete with confirmation |
-| GET | `/admin/registrations` | Session | Filter registrationType, course id, lecture id, status; paginated |
+| GET | `/admin/registrations` | Session | Filter targetType, course id, lecture id, status, q; paginated |
 | GET | `/admin/registrations/export` | Session | Same filters; raw UTF-8 BOM CSV, no-store |
 | GET | `/admin/registrations/:id` | Session | PII and private notes |
-| PATCH | `/admin/registrations/:id` | Session + CSRF | `{status?,notes?}`, no target reassignment |
+| PATCH | `/admin/registrations/:id` | Session + CSRF | `{status?,administrativeNotes?}`, validated lifecycle, no target reassignment |
 | GET | `/admin/settings` | Session | Editable singleton; defaults if not created |
 | PATCH | `/admin/settings` | Session + CSRF | Partial allowlisted fields, singleton upsert |
 | GET | `/admin/media` | Session | Metadata list, paginated |
@@ -99,7 +99,7 @@ Input: name (required), slug (optional at creation), description (optional), ima
 
 ### Courses
 
-Implemented in Phase 2.3; see [Courses contract](courses.md) and authoritative OpenAPI0.4.0. Newest approved phase requirements supersede original lecturesCount/trainingMethod and no-featured proposal: use lectureCount, trainingMode (online-live|online-recorded|hybrid), featured and localized title/shortDescription/description.
+Implemented in Phase 2.3; see [Courses contract](courses.md) and authoritative OpenAPI0.5.0. Newest approved phase requirements supersede original lecturesCount/trainingMethod and no-featured proposal: use lectureCount, trainingMode (online-live|online-recorded|hybrid), featured and localized title/shortDescription/description.
 
 Required on creation: title.ar and existing category ObjectId. Optional explicit slug, thumbnail nullable ObjectId, curriculum array of {title,topics:string[]}, lectureCount, duration display string, targetAudience:string[], trainingMode, price nullable integer piastres, currency EGP, isFree, status draft|published|archived, featured, localized SEO. Price null means unannounced, positive means paid, zero requires free. Draft defaults support incomplete content; publish requires summary/description/duration/trainingMode and active category. Server-owned first publishedAt locks slug permanently after initial publication. Draft slug updates are explicit; title edits preserve slug.
 
@@ -107,7 +107,7 @@ Public GET /courses, /courses/featured, /courses/:slug require published status 
 
 ### Lectures
 
-Input: title, optional initial slug, description, content, scheduledAt nullable ISO datetime for draft, duration positive integer minutes, meetingUrl nullable HTTPS URL, thumbnail nullable id, status `draft|published|completed|cancelled`, seo. Publishing requires title/description/scheduledAt/duration. Meeting URL may be added later. Public detail excludes meetingUrl under all circumstances. Public list uses title/slug/description/scheduledAt/duration/thumbnail. Time is stored in UTC and displayed in Africa/Cairo (including DST through Intl), never hardcoded UTC+2.
+Implemented: see [Lectures contract](lectures.md) and OpenAPI 0.5.0. Localized title/shortDescription/description, optional generated stable slug, nullable course reference, required scheduledAt and durationMinutes, nullable capacity/deadline/thumbnail/private HTTPS meetingUrl, status and localized SEO. Explicit-offset ISO dates are stored UTC and returned with Z; display via Africa/Cairo. Published requires complete Arabic descriptions and future schedule. Public list/detail/search never include meetingUrl. Admin list/DELETE also omit it; authenticated detail/create/update may include it. Cancellation/completion hides lectures; DELETE retains records. Capacity edits cannot fall below reserved seats.
 
 ### Articles
 
@@ -115,17 +115,11 @@ Input: title, optional initial slug, excerpt, content plain text, thumbnail null
 
 ### Registration
 
-```json
-{"fullName":"اسم المتدرب","phone":"01012345678","email":"learner@example.com","whatsappNumber":"+201012345678","registrationType":"course","course":"0123456789abcdef01234567"}
-```
+Implemented: see [Registrations contract](registrations.md). Public strict JSON: `{fullName,phone,email?,targetType:"lecture"|"course",targetId,privacyConsent:true}`. fullName 2..200; email valid/lowercase or omitted; phone parsed with EG default and stored E.164. Exactly one target is stored. Receipt data is `{reference:"UUID",status:"pending"}`. No public lookup, student account, payment, invitation or automatic messaging.
 
-`fullName`: trimmed 2..120 characters. `phone`: required valid normalized phone. `email`: optional valid address, max 254; blank becomes absent. WhatsApp optional valid phone, blank becomes absent. `registrationType=course` requires course and forbids lecture; `lecture` requires lecture and forbids course. Only published eligible targets; courses must have active category, lectures must be scheduled in the future. No status or notes accepted. No proof of phone ownership in this MVP; staff confirms manually.
+Published eligible targets only. Unique normalized phone/target indexes apply across all statuses; generic duplicate 409. Lecture seat increment + registration insert and cancellation/release/reactivation are transactional with majority commit and snapshot reads. Replica set/Atlas required; standalone fails closed. Pending/confirmed/attended reserve seats. pending -> confirmed/cancelled; confirmed -> cancelled/attended; cancelled -> pending/confirmed with eligibility/capacity recheck; attended terminal (lecture-only after start/completion). Same state is idempotent. Course/category administrative eligibility has the documented transaction-snapshot boundary.
 
-```json
-{"success":true,"message":"Registration received","data":{"id":"0123456789abcdef01234567","status":"pending"},"meta":null}
-```
-
-Duplicate returns generic 409 `REGISTRATION_EXISTS` without identifying the owner or exposing PII. Admin notes bounded to 2,000 characters. Status values pending/confirmed/cancelled; admins may move between them. No automatic email/WhatsApp action on a transition. CSV exports stream filtered results with bounded processing, BOM, quoted/escaped cells, and formula-prefix neutralization for values beginning with whitespace/control followed by `=`, `+`, `-`, `@` (including international phone numbers). Fixed safe filename and Content-Disposition; export includes only necessary registration fields, no meeting URLs or private admin credentials. Test Arabic round-trip and Excel-safe output.
+Admin notes max5000; listing omits contact fields/notes/consent, detail includes them. Filtered CSV is bounded to5000, ignores pagination for the download, UTF-8 BOM, CRLF, quoted/escaped, formula-neutralized including international phone values. No meeting URL or credentials. Authenticated export is no-store; PATCH additionally requires Origin/CSRF. Public creation requires trusted Origin, JSON, explicit consent and 30 attempts/15 minutes/IP without creating a session.
 
 ### Settings and media
 

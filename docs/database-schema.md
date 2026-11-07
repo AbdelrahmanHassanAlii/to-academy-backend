@@ -1,4 +1,4 @@
-# Implemented database schema — through Phase 2.3
+# Implemented database schema — through Phase 2.4
 
 The Phase 0 architecture remains the historical plan. This document records implemented relationships; authoritative field constraints are in models and OpenAPI. All models use the existing Mongoose connection. No new database or migration framework is introduced.
 
@@ -15,4 +15,12 @@ Prices use nullable integer piastres: null unannounced, free zero, non-free posi
 
 Thumbnail/image references are syntax-checked only until Media exists; they are not image URLs or embedded data. No Courses seed or data migration. Existing installed databases receive explicitly declared indexes at startup; no syncIndexes, index deletion or destructive data rewrite. Index creation failures stop startup and require investigation.
 
-Full contracts: [Courses](courses.md), [Categories](categories.md), [authentication](authentication.md), [OpenAPI](openapi.yaml). Lectures, registrations and other planned collections are not implemented in this phase.
+## Lectures and registrations
+
+Lectures: localized title/shortDescription/description, unique stable slug, nullable existing course reference, scheduledAt UTC, positive durationMinutes, nullable positive capacity, server-owned reservedSeats, nullable deadline/thumbnail/private meetingUrl, draft/published/completed/cancelled, localized SEO, first publishedAt and timestamps. meetingUrl is excluded by default selection. DELETE soft cancels; registrations retain their target. Indexes: unique slug; status+scheduledAt+id; course+status+scheduledAt+id; createdAt+id.
+
+Registrations: immutable unique UUID reference, fullName, normalized E.164 phone, nullable email, targetType, exactly one matching course/lecture reference, Arabic targetName snapshot, pending/confirmed/cancelled/attended, immutable server privacyConsentAt, private administrativeNotes, timestamps. Partial unique lecture+phone and course+phone indexes apply across all statuses; reference is unique. Filtering indexes: status+createdAt+id, targetType+status+createdAt+id, lecture+status+createdAt+id, course+status+createdAt+id, createdAt+id (date/id descending).
+
+Lecture reservation/release and registration insert/status updates share MongoDB transactions, snapshot reads and majority commits. Pending/confirmed/attended consume seats; cancelled releases once; reactivation checks current eligibility. Atomic reservation predicates prevent overbooking, and counter writes increment lecture.__v to protect concurrent capacity edits. Startup requires replica-set/Atlas topology. No standalone fallback. Course/category eligibility uses snapshot reads, with the documented cross-document lifecycle boundary. No database migration, manual counter seeding or index removal is needed for these new collections.
+
+Full contracts: [Lectures](lectures.md), [Registrations](registrations.md), [replica-set setup](mongodb-replica-set.md), [Courses](courses.md), [Categories](categories.md), [authentication](authentication.md), [OpenAPI](openapi.yaml). Articles, Settings and Media remain unimplemented.
