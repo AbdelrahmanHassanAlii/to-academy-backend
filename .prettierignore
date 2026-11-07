@@ -1,0 +1,11 @@
+node_modules
+dist
+coverage
+package-lock.json
+.tools
+.superpowers
+# Preserve reviewed Phase 0 documents and owner's master instructions byte-for-byte.
+docs/architecture.md
+docs/phase-0-architecture.md
+docs/repository-audit.md
+docs/api-contract.md
