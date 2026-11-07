@@ -1,4 +1,5 @@
 import { createServer } from 'node:http';
+import { ArticleService, createArticleModel } from './modules/articles/index.js';
 import { MediaService, createMediaModel } from './modules/media/index.js';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
@@ -25,6 +26,8 @@ export async function startServer(env: Environment, logger: Logger) {
     const media = new MediaService(createMediaModel(database.connection));
     await media.ensureIndexes();
     await media.reconcile();
+    const articles = new ArticleService(createArticleModel(database.connection));
+    await articles.ensureIndexes();
     const categories = new CategoryService(createCategoryModel(database.connection));
     await categories.ensureIndexes();
     const courses = new CourseService(createCourseModel(database.connection), categories);
@@ -61,6 +64,7 @@ export async function startServer(env: Environment, logger: Logger) {
       lectures,
       registrations,
       media,
+      articles,
       isReady,
     });
     const server = createServer(app);
