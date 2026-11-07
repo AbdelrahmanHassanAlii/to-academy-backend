@@ -86,7 +86,16 @@ describe('foundation HTTP contracts', () => {
   it('serves only implemented OpenAPI operations and Swagger UI', async () => {
     const spec = await request(app()).get('/api/v1/openapi.json');
     expect(spec.status).toBe(200);
-    expect(Object.keys(spec.body.paths).sort()).toEqual(['/auth/csrf', '/health', '/ready']);
+    expect(Object.keys(spec.body.paths).sort()).toEqual([
+      '/admin/admins/me',
+      '/auth/csrf',
+      '/auth/login',
+      '/auth/logout',
+      '/auth/me',
+      '/health',
+      '/ready',
+    ]);
+    expect(spec.body.components.securitySchemes.sessionCookie.in).toBe('cookie');
     const docs = await request(app()).get('/api/v1/docs/');
     expect(docs.status).toBe(200);
     expect(docs.text).toContain('swagger-ui');

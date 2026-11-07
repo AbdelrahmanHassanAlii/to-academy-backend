@@ -1,17 +1,20 @@
 openapi: 3.0.3
 info:
   title: TO Academy API
-  version: 0.1.0
-  description: Phase 1 foundation only. Business endpoints are not implemented.
+  version: 0.2.0
+  description: Foundation and administrator authentication. No public signup or other business modules.
 servers:
   - url: /api/v1
 tags:
   - name: Operations
   - name: Session foundation
+  - name: Authentication
+  - name: Administrators
 paths:
   /health:
     get:
-      tags: [Operations]
+      tags:
+        - Operations
       operationId: getHealth
       summary: Process liveness; no database access or session creation
       responses:
@@ -21,10 +24,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HealthResponse'
-        '403':
-          $ref: '#/components/responses/Forbidden'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '413':
           $ref: '#/components/responses/TooLarge'
         '415':
@@ -33,7 +36,8 @@ paths:
           $ref: '#/components/responses/InternalError'
   /ready:
     get:
-      tags: [Operations]
+      tags:
+        - Operations
       operationId: getReadiness
       summary: Live database ping and initialized session-store readiness
       responses:
@@ -43,28 +47,32 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ReadyResponse'
-        '503':
-          description: Dependency unavailable or shutdown in progress
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '403':
-          $ref: '#/components/responses/Forbidden'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '413':
           $ref: '#/components/responses/TooLarge'
         '415':
           $ref: '#/components/responses/UnsupportedMedia'
         '500':
           $ref: '#/components/responses/InternalError'
+        '503':
+          description: Dependency unavailable or shutdown in progress
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /auth/csrf:
     get:
-      tags: [Session foundation]
+      tags:
+        - Session foundation
       operationId: getCsrfToken
       summary: Issue or reuse a session-bound synchronizer token
-      description: Requires exact allowed Origin. Sets an HttpOnly host-only session cookie. Keep token in memory and send X-CSRF-Token on future session/admin writes. No login endpoints exist yet. Response is no-store. Limit 60/minute/IP.
+      description:
+        Exact allowed Origin required. Session-bound token with HttpOnly host-only cookie. Use
+        credentials:include and X-CSRF-Token on session/admin writes. Login rotates cookie/token;
+        fetch a fresh token afterward. No-store, 60 requests/minute/IP.
       parameters:
         - in: header
           name: Origin
@@ -79,7 +87,9 @@ paths:
             Set-Cookie:
               schema:
                 type: string
-              description: Opaque session cookie; HttpOnly, SameSite=Lax, Path=/, Secure in production. Never read or persist its value in JavaScript.
+              description:
+                Opaque session cookie; HttpOnly, SameSite=Lax, Path=/, Secure in production. Never read
+                or persist its value in JavaScript.
           content:
             application/json:
               schema:
@@ -89,11 +99,14 @@ paths:
                     properties:
                       data:
                         type: object
-                        required: [csrfToken]
+                        required:
+                          - csrfToken
                         properties:
                           csrfToken:
                             type: string
-                            pattern: '^[a-f0-9]{64}$'
+                            pattern: ^[a-f0-9]{64}$
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '401':
           description: Existing session expired; fetch a fresh token
           content:
@@ -102,14 +115,10 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
           $ref: '#/components/responses/Forbidden'
-        '400':
-          $ref: '#/components/responses/BadRequest'
         '413':
           $ref: '#/components/responses/TooLarge'
         '415':
           $ref: '#/components/responses/UnsupportedMedia'
-        '500':
-          $ref: '#/components/responses/InternalError'
         '429':
           description: Rate limit exceeded
           headers:
@@ -120,8 +129,323 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
         '503':
           description: Session persistence unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /auth/login:
+    post:
+      tags:
+        - Authentication
+      operationId: loginAdmin
+      summary: Authenticate an active administrator
+      description:
+        Requires a CSRF session first. Regenerates session, rotates CSRF and resets eight-hour
+        absolute lifetime. Returns safe profile only; refetch GET /auth/csrf after success. Bad
+        password, unknown email and inactive account all return generic INVALID_CREDENTIALS 401.
+        Five failed attempts/15 minutes per IP and normalized account plus 60 requests/minute/IP.
+        Success does not consume the failure budget. No public signup.
+      parameters:
+        - in: header
+          name: Origin
+          required: true
+          schema:
+            type: string
+          example: https://admin.toacademy.com
+        - in: header
+          name: X-CSRF-Token
+          required: true
+          schema:
+            type: string
+            pattern: ^[a-f0-9]{64}$
+          description: Token from GET /auth/csrf bound to the current cookie session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Safe administrator profile; no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminResponse'
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+              description:
+                Replacement host-only HttpOnly SameSite=Lax cookie; Secure in production. Never in
+                JSON.
+        '400':
+          description: Invalid JSON or validation; unknown fields rejected
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Missing, expired, deleted/inactive identity, or invalid login credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Untrusted Origin, invalid CSRF or insufficient permission
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          $ref: '#/components/responses/TooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMedia'
+        '429':
+          description: Login rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          headers:
+            Retry-After:
+              schema:
+                type: integer
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          description: Session service unavailable; no raw driver details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /auth/me:
+    get:
+      tags:
+        - Authentication
+      operationId: getCurrentAdmin
+      summary: Read active authenticated administrator
+      description: Reloads identity and role from MongoDB on every request.
+        Missing/expired/deleted/inactive identities return 401. Revoked sessions destroyed.
+        No-store.
+      security:
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Safe administrator profile; no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminResponse'
+        '400':
+          description: Invalid JSON or validation; unknown fields rejected
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Missing, expired, deleted/inactive identity, or invalid login credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Untrusted Origin, invalid CSRF or insufficient permission
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          $ref: '#/components/responses/TooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMedia'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          description: Session service unavailable; no raw driver details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /auth/logout:
+    post:
+      tags:
+        - Authentication
+      operationId: logoutAdmin
+      summary: Destroy current authenticated session
+      description:
+        Requires active authentication, trusted Origin and CSRF. Deletes session and expires
+        matching cookie. Replayed cookie, me and repeated logout subsequently return 401. No-store.
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: header
+          name: Origin
+          required: true
+          schema:
+            type: string
+          example: https://admin.toacademy.com
+        - in: header
+          name: X-CSRF-Token
+          required: true
+          schema:
+            type: string
+            pattern: ^[a-f0-9]{64}$
+          description: Token from GET /auth/csrf bound to the current cookie session
+      responses:
+        '200':
+          description: Logged out; cookie cleared, data:null
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        nullable: true
+                        example: null
+        '400':
+          description: Invalid JSON or validation; unknown fields rejected
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Missing, expired, deleted/inactive identity, or invalid login credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Untrusted Origin, invalid CSRF or insufficient permission
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          $ref: '#/components/responses/TooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMedia'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          description: Session service unavailable; no raw driver details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /admin/admins/me:
+    get:
+      tags:
+        - Administrators
+      operationId: getAdminProfile
+      summary: Read own safe profile
+      security:
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Safe administrator profile; no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminResponse'
+        '400':
+          description: Invalid JSON or validation; unknown fields rejected
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Missing, expired, deleted/inactive identity, or invalid login credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Untrusted Origin, invalid CSRF or insufficient permission
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          $ref: '#/components/responses/TooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMedia'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          description: Session service unavailable; no raw driver details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    patch:
+      tags:
+        - Administrators
+      operationId: updateAdminProfile
+      summary: Update own display name only
+      description: All other fields rejected. No email/password/role/isActive edits.
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: header
+          name: Origin
+          required: true
+          schema:
+            type: string
+          example: https://admin.toacademy.com
+        - in: header
+          name: X-CSRF-Token
+          required: true
+          schema:
+            type: string
+            pattern: ^[a-f0-9]{64}$
+          description: Token from GET /auth/csrf bound to the current cookie session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProfileUpdateRequest'
+      responses:
+        '200':
+          description: Safe administrator profile; no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminResponse'
+        '400':
+          description: Invalid JSON or validation; unknown fields rejected
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Missing, expired, deleted/inactive identity, or invalid login credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Untrusted Origin, invalid CSRF or insufficient permission
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          $ref: '#/components/responses/TooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMedia'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          description: Session service unavailable; no raw driver details
           content:
             application/json:
               schema:
@@ -130,11 +454,16 @@ components:
   schemas:
     SuccessEnvelope:
       type: object
-      required: [success, message, data, meta]
+      required:
+        - success
+        - message
+        - data
+        - meta
       properties:
         success:
           type: boolean
-          enum: [true]
+          enum:
+            - true
         message:
           type: string
         data: {}
@@ -149,11 +478,13 @@ components:
           properties:
             data:
               type: object
-              required: [status]
+              required:
+                - status
               properties:
                 status:
                   type: string
-                  enum: [ok]
+                  enum:
+                    - ok
     ReadyResponse:
       allOf:
         - $ref: '#/components/schemas/SuccessEnvelope'
@@ -161,18 +492,25 @@ components:
           properties:
             data:
               type: object
-              required: [status]
+              required:
+                - status
               properties:
                 status:
                   type: string
-                  enum: [ready]
+                  enum:
+                    - ready
     ErrorResponse:
       type: object
-      required: [success, message, code, errors]
+      required:
+        - success
+        - message
+        - code
+        - errors
       properties:
         success:
           type: boolean
-          enum: [false]
+          enum:
+            - false
         message:
           type: string
         code:
@@ -181,7 +519,10 @@ components:
           type: array
           items:
             type: object
-            required: [path, message, code]
+            required:
+              - path
+              - message
+              - code
             properties:
               path:
                 type: string
@@ -189,6 +530,73 @@ components:
                 type: string
               code:
                 type: string
+    LoginRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 254
+          description: Trimmed/lowercased
+        password:
+          type: string
+          format: password
+          writeOnly: true
+          minLength: 12
+          maxLength: 72
+          description:
+            Not trimmed. At least 12 characters and at most 72 UTF-8 bytes, no NUL. Byte limit
+            additionally enforced server-side.
+    AdminProfile:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+        - email
+        - role
+        - lastLoginAt
+      properties:
+        id:
+          type: string
+          pattern: ^[a-f0-9]{24}$
+        name:
+          type: string
+          minLength: 2
+          maxLength: 120
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          enum:
+            - admin
+        lastLoginAt:
+          type: string
+          format: date-time
+          nullable: true
+    AdminResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessEnvelope'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/AdminProfile'
+    ProfileUpdateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 120
+          description: Trimmed display name
   responses:
     BadRequest:
       description: Malformed JSON body (INVALID_JSON)
@@ -220,3 +628,12 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: toacademy.sid
+      description:
+        Configured SESSION_COOKIE_NAME (documented default toacademy.sid). Host-only HttpOnly
+        SameSite=Lax; Secure production; eight-hour absolute lifetime. Use credentialed Fetch. No
+        bearer tokens.
