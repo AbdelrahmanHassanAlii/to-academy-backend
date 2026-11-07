@@ -1,6 +1,6 @@
 # TO Academy backend
 
-Phase 1: Express/TypeScript API foundation, MongoDB connectivity, Mongo-backed session/CSRF infrastructure and operational endpoints. No business modules, login, administrator accounts or seeds exist yet. Three repositories remain independent; this project runs directly on the host.
+Phase 2.1: Express/TypeScript foundation plus administrator authentication, protected profile access and secure CLI provisioning. Three repositories remain independent; this project runs directly on the host. See the [authentication and seed runbook](docs/authentication.md).
 
 ## Requirements and installation
 
@@ -85,6 +85,8 @@ This opens a real Mongoose connection, issues MongoDB `ping`, and closes it. Suc
 
 ## Run and commands
 
+`npm run seed:admin` provisions an administrator using ephemeral SEED_ADMIN_NAME, SEED_ADMIN_EMAIL and SEED_ADMIN_PASSWORD inputs; see the [secure prompt-based instructions](docs/authentication.md#secure-cli-provisioning). It refuses duplicate email and prints no credentials. Provisioning needs full dependencies because the CLI uses tsx; the production API runtime does not.
+
 ```powershell
 npm run dev
 # Production:
@@ -109,15 +111,17 @@ Deploy `dist/`, `docs/openapi.yaml`, `package.json` and `package-lock.json`, ins
 
 ## Implemented API
 
+Authentication adds `POST /api/v1/auth/login`, `POST /api/v1/auth/logout`, `GET /api/v1/auth/me`, and protected `GET/PATCH /api/v1/admin/admins/me` (name updates only). See the [complete session flow](docs/authentication.md). Infrastructure endpoints remain:
+
 | Endpoint                   | Result                                                                                  |
 | -------------------------- | --------------------------------------------------------------------------------------- |
 | `GET /api/v1/health`       | 200 process liveness; no DB dependency or cookie creation                               |
 | `GET /api/v1/ready`        | 200 after live Mongo ping/session read access; 503 if dependencies unavailable/shutdown |
 | `GET /api/v1/auth/csrf`    | Trusted Origin required; session-bound token + cookie, no-store, rate limited           |
 | `GET /api/v1/openapi.json` | Authoritative implemented OpenAPI document                                              |
-| `GET /api/v1/docs/`        | Swagger UI (read-only operation display in Phase 1)                                     |
+| `GET /api/v1/docs/`        | Swagger UI (read-only)                                                                  |
 
-All API JSON successes: `{success:true,message,data,meta:null}`; errors: `{success:false,message,code,errors:[]}`. Raw OpenAPI JSON/Swagger assets are documentation exceptions. Unknown endpoints return JSON 404, including future business/auth endpoints. OpenAPI paths cover implemented operations only; infrastructure documentation endpoints need no recursive self-description. Health responses are minimal and no-store. Readiness checks dependency access, not business migrations/fixtures that do not exist yet.
+All API JSON successes: `{success:true,message,data,meta:null}`; errors: `{success:false,message,code,errors:[]}`. Raw OpenAPI JSON/Swagger assets are documentation exceptions. Unknown endpoints return JSON 404, including future business endpoints. OpenAPI paths cover implemented operations only; infrastructure documentation endpoints need no recursive self-description. Health responses are minimal and no-store. Readiness checks dependency access, not business migrations/fixtures that do not exist yet.
 
 Manual checks:
 
@@ -129,14 +133,14 @@ Invoke-RestMethod http://localhost:4000/api/v1/auth/csrf -Headers @{ Origin='htt
 
 ## Security and session architecture
 
-Helmet, explicit credentialed CORS, 100 KiB JSON limit, structured Pino request logs, generated request ids, centralized safe errors, Zod validation and reusable IP rate limiting are installed. Logs include method/path (without query), request id/status/latency; headers, cookies, body/PII, tokens, raw errors and Mongo URI are excluded. No logger serializes raw startup errors. Validation provides parsed body/query/params in `res.locals.validated`; services/controllers in later phases must consume validated data. Rate limiting uses process-local memory: suitable for the initial one-process API only, resets on restart, and must use shared enforcement before scaling instances. Only CSRF issuance is rate limited now; login/registration-specific policies belong to their later endpoints.
+Helmet, explicit credentialed CORS, 100 KiB JSON limit, structured Pino request logs, generated request ids, centralized safe errors, Zod validation and reusable IP rate limiting are installed. Logs include method/path (without query), request id/status/latency; headers, cookies, body/PII, tokens, raw errors and Mongo URI are excluded. No logger serializes raw startup errors. Validation provides parsed body/query/params in `res.locals.validated`; services/controllers in later phases must consume validated data. Rate limiting uses process-local memory: suitable for the initial one-process API only, resets on restart, and must use shared enforcement before scaling instances. CSRF issuance and login are rate limited; registration policies belong to the later registration module.
 
 Session behavior:
 
 - express-session + connect-mongo shares the already-connected Mongoose client. No runtime MemoryStore fallback. Session storage uses `sessions`, with an awaited TTL expiry index. MongoDB is the single connection owner; do not call `store.close()` independently while the application uses the client.
-- Cookies are HttpOnly, host-only (no Domain), Path=/, SameSite=Lax; Secure is **true in production** and false for local HTTP. `saveUninitialized=false`, `resave=false`, `rolling=false`. Public health/docs do not load/create sessions. Session payload currently contains only CSRF token and absolute expiry, not administrator identity.
-- First token issuance sets a random 32-byte hex synchronizer token and eight-hour deadline. Expiry is checked server-side independently of delayed TTL cleanup; expired sessions are destroyed and cookies cleared. Repeated token reads preserve the logical deadline. Phase 2 must regenerate the session and rotate token/set a fresh absolute lifetime after login; no login/logout/authentication or authorization claims are made in Phase 1.
-- `GET /auth/csrf` requires exact configured Origin; returns token in JSON with no-store. A browser must use `credentials: 'include'`, keep token in memory, and later send `X-CSRF-Token` on session/admin writes. Exported `requireCsrf` checks Origin and session-bound token using timing-safe comparison. No production write/probe endpoint exists yet; synthetic writes live only in tests.
+- Cookies are HttpOnly, host-only (no Domain), Path=/, SameSite=Lax; Secure is **true in production** and false for local HTTP. `saveUninitialized=false`, `resave=false`, `rolling=false`. Public health/docs do not load/create sessions. Session payload contains adminId after login, CSRF token, absolute expiry and cookie metadata; roles are read from MongoDB, never trusted from session/client input.
+- First token issuance sets a random 32-byte hex synchronizer token and eight-hour deadline. Expiry is checked server-side independently of delayed TTL cleanup; expired sessions are destroyed and cookies cleared. Repeated token reads preserve the logical deadline. Login regenerates the session, rotates the CSRF token and resets the absolute lifetime; clients refetch /auth/csrf afterward. Logout destroys the stored session and clears its cookie.
+- `GET /auth/csrf` requires exact configured Origin; returns token in JSON with no-store. A browser must use `credentials: 'include'`, keep token in memory, and later send `X-CSRF-Token` on session/admin writes. Exported `requireCsrf` checks Origin and session-bound token using timing-safe comparison. Login, logout and protected name updates use the CSRF guard; synthetic test-only probe routes are never mounted by the runtime.
 - Missing Origin is permitted on public health/docs for operations clients. Session issuance and guarded writes reject missing/untrusted Origin. No Referer fallback is needed for these Fetch clients. No wildcard credentials, localStorage session ids, JWTs or frontend secrets.
 
 Both deployment configurations were tested at HTTP/middleware level: localhost ports 5174 -> 4000 (same-site, different origin) and HTTPS admin.toacademy.com -> api.toacademy.com (same-site, different origin). SameSite=Lax supports the intended topology; requests still need `credentials: 'include'`. The API's host-only cookie is sent only to the API, which is sufficient. Secure cookies are emitted behind a declared TLS proxy and withheld on untrusted/insecure transport. CORS rejects lookalike subdomains. These are server-side tests, not a real DNS/TLS deployment or cross-browser acceptance run. Unrelated platform domains are outside the approved same-site topology; do not silently use SameSite=None.
@@ -157,4 +161,4 @@ npm run db:check
 
 Use a dedicated test database, never the application DB. Integration checks fail closed unless its URI names `to_academy_test` or `to_academy_test_<suffix>`; they do not drop databases/collections and delete only session records they create. An explicit test URI is mandatory; absence is a failed setup, not a silent skip. Missing MongoDB is an environment blocker, not a passing integration suite. Unit tests use MemoryStore only in test fixtures to verify middleware policy; persistence tests use real connect-mongo.
 
-See [Phase 1 verification report](docs/phase-1-verification.md) for executed commands, outcomes and remaining limits. Approved Phase 0 documents remain historical design records; [architecture](docs/phase-0-architecture.md), [audit](docs/repository-audit.md), and [future API plan](docs/api-contract.md) must not be mistaken for implemented endpoints. No business modules, passwords, seed scripts, frontend changes, commits or pushes are part of Phase 1.
+See [Phase 2.1 report](docs/phase-2-1-verification.md) and [authentication runbook](docs/authentication.md) for current endpoints, seed instructions and security behavior. The [Phase 1 report](docs/phase-1-verification.md) and approved Phase 0 documents remain historical records: [architecture](docs/phase-0-architecture.md), [audit](docs/repository-audit.md), [API plan](docs/api-contract.md). Phase 1 was published in nine commits; Phase 2.1 remains local pending push approval. Frontend repositories remain untouched.
