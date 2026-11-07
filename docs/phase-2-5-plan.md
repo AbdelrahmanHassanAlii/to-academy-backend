@@ -13,12 +13,12 @@ Spec: owner's 2026-11-08 request, Articles, Settings and Media. Execution is aut
 
 ## Tasks and verification
 
-- [ ] Media tests first: signatures/limits, multipart validation, privacy, auth/CSRF, GridFS streaming and failure cleanup. Implement model, validation utilities, service, controller and routes. Run unit/type checks and real MongoDB tests; commit a verified media unit.
-- [ ] Articles tests first: lifecycle, sanitization, slug conflicts, featured/search/pagination and access. Implement six module layers using media reference coordination; run relevant tests and commit.
-- [ ] Settings tests first: defaults, simultaneous singleton upserts, public filtering, contacts/URLs/logo and access. Implement six layers, run tests and commit.
-- [ ] Integrate course/lecture create/update with transactional media checks and add deletion race/reference regression tests. Preserve registration concurrency and replica-set startup checks. Commit after verification.
-- [ ] Wire runtime/app routes using the existing connection; document schemas, all operations, CSRF and multipart contracts. Validate OpenAPI and HTTP examples.
-- [ ] Run full unit, real replica-set integration/GridFS/registration suites, typecheck, lint, format check, build and strict Commitlint. Review complete diff, record actual results, create final local documentation commit and verify clean ahead/behind state. Stop for owner review.
+- [x] Media tests first: signatures/limits, multipart validation, privacy, auth/CSRF, GridFS streaming and failure cleanup. Implement model, validation utilities, service, controller and routes. Run unit/type checks and real MongoDB tests; commit a verified media unit.
+- [x] Articles tests first: lifecycle, sanitization, slug conflicts, featured/search/pagination and access. Implement six module layers using media reference coordination; run relevant tests and commit.
+- [x] Settings tests first: defaults, simultaneous singleton upserts, public filtering, contacts/URLs/logo and access. Implement six layers, run tests and commit.
+- [x] Integrate course/lecture create/update with transactional media checks and add deletion race/reference regression tests. Preserve registration concurrency and replica-set startup checks. Commit after verification.
+- [x] Wire runtime/app routes using the existing connection; document schemas, all operations, CSRF and multipart contracts. Validate OpenAPI and HTTP examples.
+- [x] Run full unit, real replica-set integration/GridFS/registration suites, typecheck, lint, format check, build and strict Commitlint. Review complete diff, record actual results, create final local documentation commit and verify clean ahead/behind state. Stop for owner review.
 
 ## Review focus
 
