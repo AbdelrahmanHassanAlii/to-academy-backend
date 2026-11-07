@@ -88,10 +88,14 @@ describe('foundation HTTP contracts', () => {
     expect(spec.status).toBe(200);
     expect(Object.keys(spec.body.paths).sort()).toEqual([
       '/admin/admins/me',
+      '/admin/categories',
+      '/admin/categories/{id}',
       '/auth/csrf',
       '/auth/login',
       '/auth/logout',
       '/auth/me',
+      '/categories',
+      '/categories/{slug}',
       '/health',
       '/ready',
     ]);

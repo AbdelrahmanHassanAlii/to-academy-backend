@@ -1,8 +1,9 @@
 openapi: 3.0.3
 info:
   title: TO Academy API
-  version: 0.2.0
-  description: Foundation and administrator authentication. No public signup or other business modules.
+  version: 0.3.0
+  description: TO Academy foundation, administrator authentication and localized categories. No
+    courses or other business modules.
 servers:
   - url: /api/v1
 tags:
@@ -10,6 +11,7 @@ tags:
   - name: Session foundation
   - name: Authentication
   - name: Administrators
+  - name: Categories
 paths:
   /health:
     get:
@@ -450,6 +452,482 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /categories:
+    get:
+      tags:
+        - Categories
+      operationId: listPublicCategories
+      summary: List active categories only
+      description: 'Always active-only. Sort by sortOrder ascending then id ascending. Strict query
+        allowlist: page,limit,q; no public inactive filter. No session creation.'
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100000
+            default: 1
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 12
+        - in: query
+          name: q
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 100
+          description:
+            Trimmed literal case-insensitive search across Arabic/English names and slug; no
+            regex/operators
+      responses:
+        '200':
+          description: Paginated safe active categories
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CategoryPublicListResponse'
+        '400':
+          description: VALIDATION_ERROR or invalid JSON; strict params, queries and bodies
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Untrusted browser Origin
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          $ref: '#/components/responses/TooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMedia'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          description: DATABASE_UNAVAILABLE or SESSION_UNAVAILABLE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /categories/{slug}:
+    get:
+      tags:
+        - Categories
+      operationId: getPublicCategory
+      summary: Retrieve an active category by normalized slug
+      parameters:
+        - in: path
+          name: slug
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 120
+          description: Arabic/Latin/numbers/combining marks separated by hyphens;
+            NFKC/lowercase/space-underscore normalization
+      responses:
+        '200':
+          description: Safe active category
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CategoryPublicResponse'
+        '400':
+          description: VALIDATION_ERROR or invalid JSON; strict params, queries and bodies
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Untrusted browser Origin
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: CATEGORY_NOT_FOUND; inactive categories indistinguishable from missing on public detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          $ref: '#/components/responses/TooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMedia'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          description: DATABASE_UNAVAILABLE or SESSION_UNAVAILABLE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /admin/categories:
+    get:
+      tags:
+        - Categories
+      operationId: listAdminCategories
+      summary: List all or filtered categories
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100000
+            default: 1
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - in: query
+          name: q
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 100
+          description:
+            Trimmed literal case-insensitive search across Arabic/English names and slug; no
+            regex/operators
+        - in: query
+          name: isActive
+          schema:
+            type: boolean
+          description: Only exact true/false strings; absent includes both states
+      description:
+        Requires active administrator. SortOrder then id ascending. Includes status/timestamps;
+        no arbitrary sort/filter fields.
+      responses:
+        '200':
+          description: Paginated admin category records
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CategoryAdminListResponse'
+        '400':
+          description: VALIDATION_ERROR or invalid JSON; strict params, queries and bodies
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Missing/expired/inactive administrator session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: CSRF/origin/role denied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          $ref: '#/components/responses/TooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMedia'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          description: DATABASE_UNAVAILABLE or SESSION_UNAVAILABLE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      tags:
+        - Categories
+      operationId: createCategory
+      summary: Create a localized category
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: header
+          name: Origin
+          required: true
+          schema:
+            type: string
+          example: https://admin.toacademy.com
+        - in: header
+          name: X-CSRF-Token
+          required: true
+          schema:
+            type: string
+            pattern: ^[a-f0-9]{64}$
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CategoryCreateRequest'
+      responses:
+        '201':
+          description: Category created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CategoryAdminResponse'
+        '400':
+          description: VALIDATION_ERROR or invalid JSON; strict params, queries and bodies
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Missing/expired/inactive administrator session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: CSRF/origin/role denied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: CATEGORY_SLUG_EXISTS after normalization; database unique index handles concurrent writes
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          $ref: '#/components/responses/TooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMedia'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          description: DATABASE_UNAVAILABLE or SESSION_UNAVAILABLE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /admin/categories/{id}:
+    get:
+      tags:
+        - Categories
+      operationId: getAdminCategory
+      summary: Read a category including inactive records
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            pattern: ^[a-fA-F0-9]{24}$
+      responses:
+        '200':
+          description: Category record
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CategoryAdminResponse'
+        '400':
+          description: VALIDATION_ERROR or invalid JSON; strict params, queries and bodies
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Missing/expired/inactive administrator session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: CSRF/origin/role denied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: CATEGORY_NOT_FOUND; inactive categories indistinguishable from missing on public detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          $ref: '#/components/responses/TooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMedia'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          description: DATABASE_UNAVAILABLE or SESSION_UNAVAILABLE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    patch:
+      tags:
+        - Categories
+      operationId: updateCategory
+      summary: Edit category content, active state and order
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            pattern: ^[a-fA-F0-9]{24}$
+        - in: header
+          name: Origin
+          required: true
+          schema:
+            type: string
+          example: https://admin.toacademy.com
+        - in: header
+          name: X-CSRF-Token
+          required: true
+          schema:
+            type: string
+            pattern: ^[a-f0-9]{64}$
+      description: Root fields omitted are preserved. Provided name/description objects replace that
+        localized object; name always requires ar. image:null clears its reference. Slug changes are
+        explicit; conflicts return409.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CategoryUpdateRequest'
+      responses:
+        '200':
+          description: Updated category
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CategoryAdminResponse'
+        '400':
+          description: VALIDATION_ERROR or invalid JSON; strict params, queries and bodies
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Missing/expired/inactive administrator session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: CSRF/origin/role denied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: CATEGORY_NOT_FOUND; inactive categories indistinguishable from missing on public detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: CATEGORY_SLUG_EXISTS after normalization; database unique index handles concurrent writes
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          $ref: '#/components/responses/TooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMedia'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          description: DATABASE_UNAVAILABLE or SESSION_UNAVAILABLE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      tags:
+        - Categories
+      operationId: deactivateCategory
+      summary: Soft-deactivate a category; retain document and id
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            pattern: ^[a-fA-F0-9]{24}$
+        - in: header
+          name: Origin
+          required: true
+          schema:
+            type: string
+          example: https://admin.toacademy.com
+        - in: header
+          name: X-CSRF-Token
+          required: true
+          schema:
+            type: string
+            pattern: ^[a-f0-9]{64}$
+      description:
+        Sets isActive=false, never physically deletes. Idempotent deactivation of existing
+        records. Future course references remain intact; no course model implemented.
+      responses:
+        '200':
+          description: Retained category with isActive:false
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CategoryAdminResponse'
+        '400':
+          description: VALIDATION_ERROR or invalid JSON; strict params, queries and bodies
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Missing/expired/inactive administrator session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: CSRF/origin/role denied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: CATEGORY_NOT_FOUND; inactive categories indistinguishable from missing on public detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          $ref: '#/components/responses/TooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMedia'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          description: DATABASE_UNAVAILABLE or SESSION_UNAVAILABLE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 components:
   schemas:
     SuccessEnvelope:
@@ -597,6 +1075,235 @@ components:
           minLength: 2
           maxLength: 120
           description: Trimmed display name
+    CategoryName:
+      type: object
+      additionalProperties: false
+      required:
+        - ar
+      properties:
+        ar:
+          type: string
+          minLength: 1
+          maxLength: 120
+        en:
+          type: string
+          minLength: 1
+          maxLength: 120
+    CategoryDescription:
+      type: object
+      additionalProperties: false
+      properties:
+        ar:
+          type: string
+          maxLength: 4000
+        en:
+          type: string
+          maxLength: 4000
+    CategoryCreateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+      properties:
+        name:
+          $ref: '#/components/schemas/CategoryName'
+        slug:
+          type: string
+          minLength: 1
+          maxLength: 120
+          description:
+            Normalized unique slug; if absent at creation derive from English name, otherwise
+            Arabic. Supply explicit slug if name cannot form a valid slug.
+        description:
+          $ref: '#/components/schemas/CategoryDescription'
+        image:
+          type: string
+          pattern: ^[a-fA-F0-9]{24}$
+          nullable: true
+          description:
+            GridFS image id reference, syntactically validated only until media functionality
+            exists; no URL/upload input
+        isActive:
+          type: boolean
+          default: true
+        sortOrder:
+          type: integer
+          minimum: 0
+          maximum: 1000000
+          default: 0
+    CategoryUpdateRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        name:
+          $ref: '#/components/schemas/CategoryName'
+        slug:
+          type: string
+          minLength: 1
+          maxLength: 120
+          description:
+            Normalized unique slug; if absent at creation derive from English name, otherwise
+            Arabic. Supply explicit slug if name cannot form a valid slug.
+        description:
+          $ref: '#/components/schemas/CategoryDescription'
+        image:
+          type: string
+          pattern: ^[a-fA-F0-9]{24}$
+          nullable: true
+          description:
+            GridFS image id reference, syntactically validated only until media functionality
+            exists; no URL/upload input
+        isActive:
+          type: boolean
+          default: true
+        sortOrder:
+          type: integer
+          minimum: 0
+          maximum: 1000000
+          default: 0
+    CategoryPublic:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+        - slug
+        - description
+        - image
+        - sortOrder
+      properties:
+        id:
+          type: string
+          pattern: ^[a-f0-9]{24}$
+        name:
+          $ref: '#/components/schemas/CategoryName'
+        slug:
+          type: string
+          minLength: 1
+          maxLength: 120
+          description:
+            Normalized unique slug; if absent at creation derive from English name, otherwise
+            Arabic. Supply explicit slug if name cannot form a valid slug.
+        description:
+          $ref: '#/components/schemas/CategoryDescription'
+        image:
+          type: string
+          pattern: ^[a-fA-F0-9]{24}$
+          nullable: true
+          description:
+            GridFS image id reference, syntactically validated only until media functionality
+            exists; no URL/upload input
+        sortOrder:
+          type: integer
+          minimum: 0
+          maximum: 1000000
+          default: 0
+    CategoryAdmin:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+        - slug
+        - description
+        - image
+        - sortOrder
+        - isActive
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          pattern: ^[a-f0-9]{24}$
+        name:
+          $ref: '#/components/schemas/CategoryName'
+        slug:
+          type: string
+          minLength: 1
+          maxLength: 120
+          description:
+            Normalized unique slug; if absent at creation derive from English name, otherwise
+            Arabic. Supply explicit slug if name cannot form a valid slug.
+        description:
+          $ref: '#/components/schemas/CategoryDescription'
+        image:
+          type: string
+          pattern: ^[a-fA-F0-9]{24}$
+          nullable: true
+          description:
+            GridFS image id reference, syntactically validated only until media functionality
+            exists; no URL/upload input
+        sortOrder:
+          type: integer
+          minimum: 0
+          maximum: 1000000
+          default: 0
+        isActive:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    PaginationMeta:
+      type: object
+      required:
+        - page
+        - limit
+        - total
+        - totalPages
+      properties:
+        page:
+          type: integer
+          minimum: 1
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+        total:
+          type: integer
+          minimum: 0
+        totalPages:
+          type: integer
+          minimum: 0
+    CategoryPublicResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessEnvelope'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/CategoryPublic'
+    CategoryPublicListResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessEnvelope'
+        - type: object
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/CategoryPublic'
+            meta:
+              $ref: '#/components/schemas/PaginationMeta'
+    CategoryAdminResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessEnvelope'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/CategoryAdmin'
+    CategoryAdminListResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessEnvelope'
+        - type: object
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/CategoryAdmin'
+            meta:
+              $ref: '#/components/schemas/PaginationMeta'
   responses:
     BadRequest:
       description: Malformed JSON body (INVALID_JSON)
