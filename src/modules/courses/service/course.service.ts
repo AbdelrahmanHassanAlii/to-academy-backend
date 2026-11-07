@@ -1,4 +1,4 @@
-import { Types, type Model, type SortOrder } from 'mongoose';
+import { Types, type Model, type SortOrder, type ClientSession } from 'mongoose';
 import type { CourseRecord } from '../model/index.js';
 import type { CourseQuery, CreateCourseInput, UpdateCourseInput } from '../validators/index.js';
 import {
@@ -65,6 +65,29 @@ export class CourseService {
   ) {}
   async ensureIndexes(): Promise<void> {
     await this.model.createIndexes();
+  }
+
+  async lectureReference(id: string) {
+    const course = await this.model.findById(id).select('_id').lean().exec();
+    if (!course) throw missing();
+    return course._id.toString();
+  }
+
+  async registrationTarget(id: string, session: ClientSession) {
+    const course = await this.model
+      .findById(id)
+      .select('_id title status category')
+      .session(session)
+      .lean()
+      .exec();
+    if (!course) throw missing();
+    const category = await this.categories.registrationReference(
+      course.category.toString(),
+      session,
+    );
+    if (course.status !== 'published' || !category)
+      throw new AppError(409, 'TARGET_INELIGIBLE', 'Target is not accepting registrations');
+    return { id: course._id.toString(), title: course.title };
   }
 
   async list(query: CourseQuery, admin = false, featuredOnly = false) {

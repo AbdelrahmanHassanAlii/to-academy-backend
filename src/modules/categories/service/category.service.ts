@@ -1,4 +1,4 @@
-import { Types, type Model } from 'mongoose';
+import { Types, type Model, type ClientSession } from 'mongoose';
 import type { CategoryRecord } from '../model/index.js';
 import type {
   CategoryQuery,
@@ -77,6 +77,15 @@ export class CategoryService {
       slug: category.slug,
       isActive: category.isActive,
     };
+  }
+
+  async registrationReference(id: string, session: ClientSession) {
+    return this.model
+      .findOne({ _id: id, isActive: true })
+      .select('_id')
+      .session(session)
+      .lean()
+      .exec();
   }
 
   async activeCourseReferences(id?: string, slug?: string) {
