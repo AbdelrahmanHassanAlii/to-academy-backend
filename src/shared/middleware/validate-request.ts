@@ -5,6 +5,7 @@ import { AppError } from '../errors/app-error.js';
 export function validateRequest(
   schema: ZodType,
   source: 'body' | 'query' | 'params' = 'body',
+  target = 'validated',
 ): RequestHandler {
   return (req, res, next) => {
     const result = schema.safeParse(req[source]);
@@ -24,7 +25,7 @@ export function validateRequest(
       return;
     }
     // Express 5 query is a getter. Do not mutate req.query or silently trust the unparsed input.
-    res.locals.validated = result.data;
+    res.locals[target] = result.data;
     next();
   };
 }
