@@ -1,0 +1,141 @@
+# API contract plan — v1
+
+Phase 0 design, 2026-11-07. None of these endpoints exists yet. This document is the implementation plan; `docs/openapi.yaml` will become the authoritative machine-readable contract as endpoints are implemented in Phases 1-2. Do not generate frontend types from invented or incomplete behavior. See [architecture](phase-0-architecture.md) for security, relationships, lifecycle and environment decisions.
+
+## Conventions
+
+Base: `/api/v1`. JSON requests/responses except multipart image uploads, streamed media, CSV exports, and the OpenAPI/Swagger documents. Admin operations use `/admin/...`; authentication uses `/auth/...`. Every admin endpoint requires an active administrator session. Every session-affecting/admin write also requires CSRF and trusted Origin checks. Public registration does not require an admin session or CSRF token.
+
+Success responses always include `success`, `message`, `data`, and `meta`:
+
+```json
+{"success":true,"message":"Courses retrieved successfully","data":[],"meta":{"page":1,"limit":12,"total":0,"totalPages":0}}
+```
+
+Singular operations use `meta:null`. Creates return 201; reads/patches/deletes/logout return 200 so the envelope remains consistent. Deleted entity responses use `data:null`. Raw downloads are explicitly documented exceptions. Messages are human-readable; clients branch on HTTP status and stable error codes, not message text. Frontends provide Arabic UI copy locally.
+
+```json
+{"success":false,"message":"Validation failed","code":"VALIDATION_ERROR","errors":[{"path":"phone","message":"Invalid phone number","code":"INVALID_PHONE"}]}
+```
+
+All errors include an `errors` array (empty for non-field errors). Statuses: 400 invalid JSON/validation/query/id, 401 missing/expired session or invalid login, 403 invalid CSRF/origin or disallowed action, 404 absent/inaccessible resource, 409 duplicate/in-use/lifecycle conflict, 413 upload/body too large, 415 unsupported media, 429 rate limit (Retry-After), 500 unexpected error, 503 database unavailable. Error responses never include Mongo errors, stack traces, secrets, existing registrant PII or session ids. Login failure always uses the same public response.
+
+List query defaults: `page=1`, `limit=12` publicly and `limit=20` for admin; max limit 100. Positive integers only. Whitelisted sort values; stable tie-break on id. Admin default newest first, category sortOrder ascending, public lectures schedule ascending, public articles publishedAt descending. `meta` includes page/limit/total/totalPages. Empty lists return 200; details of hidden content return 404. Text search `q` bounded to 100 characters, treated as escaped literal text (not a caller-supplied regex). Do not return unlimited lists for CSV or prerendering.
+
+UTC ISO dates, ObjectId strings, no `__v`. Optional absent text fields normalize to null where specified in OpenAPI; collections return arrays, never null. Shared SEO input: `{title?: string, description?: string, ogImage?: string}` with safe media reference and length limits. Canonical URLs derive from configured public origin and stable route; no arbitrary canonical override. Slugs support Arabic/Latin safely and are path-encoded by clients. PATCH rejects unknown keys and cannot mutate ids, createdAt, passwordHash or author identity through generic payloads.
+
+## Endpoints
+
+Paths below include `/api/v1` implicitly. `Session` = authenticated active admin; `CSRF` = synchronizer token plus exact allowed Origin for writes.
+
+| Method | Path | Access | Contract |
+| --- | --- | --- | --- |
+| GET | `/health` | Public | Liveness, minimal `{status:"ok"}` |
+| GET | `/ready` | Public | 200 ready or 503; no infrastructure details |
+| GET | `/openapi.json` | Public | Implemented OpenAPI only |
+| GET | `/docs` | Public | Swagger UI, no credentials embedded |
+| GET | `/auth/csrf` | Allowed browser origin, rate limited | `{csrfToken}` in envelope; initializes CSRF session, no-store |
+| POST | `/auth/login` | CSRF, login rate limit | `{email,password}` -> safe admin DTO; rotate/save session and CSRF |
+| POST | `/auth/logout` | Session + CSRF | Destroy server session, clear cookie, data null |
+| GET | `/auth/me` | Session | `{id,name,email,role,lastLoginAt}`; no-store |
+| GET | `/admin/admins/me` | Session | Current administrator profile only |
+| PATCH | `/admin/admins/me` | Session + CSRF | `{name}` only; no public/admin account creation endpoint |
+| GET | `/admin/overview` | Session | `{totalCourses,publishedCourses,upcomingLectures,totalRegistrations,pendingRegistrations}` |
+| GET | `/categories` | Public | Active only, paginated, sortOrder |
+| GET | `/courses` | Public | Published + active category only; filters `category` slug, `q`, `isFree`; paginated |
+| GET | `/courses/:slug` | Public | Public course detail or 404 |
+| GET | `/lectures` | Public | Published only; `upcoming=true` for scheduledAt>=now; paginated |
+| GET | `/lectures/:slug` | Public | Public lecture detail, never meetingUrl |
+| GET | `/articles` | Public | Published nonfuture articles only, paginated, `q` |
+| GET | `/articles/:slug` | Public | Public article and safe author display name |
+| GET | `/settings` | Public | Academy/contact/about/footer/SEO allowlist |
+| POST | `/registrations` | Public + registration rate limit | Discriminated course/lecture registration; 201 receipt only |
+| GET | `/media/:id` | Public only if allowed by visibility and live references | Stream verified image; otherwise 404 |
+| GET | `/admin/categories` | Session | All states, paginated |
+| POST | `/admin/categories` | Session + CSRF | Category input -> created record |
+| GET | `/admin/categories/:id` | Session | Editable record |
+| PATCH | `/admin/categories/:id` | Session + CSRF | Partial category input |
+| DELETE | `/admin/categories/:id` | Session + CSRF | Delete unused only, else 409 |
+| GET | `/admin/courses` | Session | Filter `status`, category id, `q`; paginated |
+| POST | `/admin/courses` | Session + CSRF | Course input -> record |
+| GET | `/admin/courses/:id` | Session | Includes drafts/archive |
+| PATCH | `/admin/courses/:id` | Session + CSRF | Includes publish/unpublish/archive via status |
+| DELETE | `/admin/courses/:id` | Session + CSRF | 409 if registrations; prefer archive |
+| GET | `/admin/lectures` | Session | Filter status and schedule; paginated |
+| POST | `/admin/lectures` | Session + CSRF | Lecture input, private meetingUrl allowed |
+| GET | `/admin/lectures/:id` | Session | Includes meetingUrl |
+| PATCH | `/admin/lectures/:id` | Session + CSRF | Schedule, edit link, publish/complete/cancel |
+| DELETE | `/admin/lectures/:id` | Session + CSRF | 409 if registrations |
+| GET | `/admin/articles` | Session | Filter status, `q`; paginated |
+| POST | `/admin/articles` | Session + CSRF | Article input; author=current admin |
+| GET | `/admin/articles/:id` | Session | Includes drafts |
+| PATCH | `/admin/articles/:id` | Session + CSRF | Content/SEO/status; server manages publishedAt |
+| DELETE | `/admin/articles/:id` | Session + CSRF | Delete with confirmation |
+| GET | `/admin/registrations` | Session | Filter registrationType, course id, lecture id, status; paginated |
+| GET | `/admin/registrations/export` | Session | Same filters; raw UTF-8 BOM CSV, no-store |
+| GET | `/admin/registrations/:id` | Session | PII and private notes |
+| PATCH | `/admin/registrations/:id` | Session + CSRF | `{status?,notes?}`, no target reassignment |
+| GET | `/admin/settings` | Session | Editable singleton; defaults if not created |
+| PATCH | `/admin/settings` | Session + CSRF | Partial allowlisted fields, singleton upsert |
+| GET | `/admin/media` | Session | Metadata list, paginated |
+| POST | `/admin/media` | Session + CSRF | multipart `file`, optional `alt`; private by default |
+| GET | `/admin/media/:id` | Session | Metadata only |
+| GET | `/admin/media/:id/content` | Session | Authorized raw image stream |
+| PATCH | `/admin/media/:id` | Session + CSRF | `{alt?,visibility?:"private"|"public"}` |
+| DELETE | `/admin/media/:id` | Session + CSRF | Delete unreferenced file and chunks, else 409 |
+
+Register `/admin/registrations/export` before `/:id`. Route ids use ObjectId validation; public detail paths use slug validation. There is no public registration list, meeting-link reveal endpoint, administrator signup, contact inbox, email callback, or Zoom API.
+
+## Request and response schemas to implement in OpenAPI
+
+### Auth
+
+Login email trimmed/lowercased; password checked as supplied (never trim passwords). Success contains only the safe administrator profile. Refresh CSRF with `/auth/csrf` after login before further mutations; frontend holds token only in memory. Cookies are sent by browser via credentials, never returned as response data. All auth/profile/registration admin responses are `Cache-Control: no-store`.
+
+### Categories
+
+Input: name (required), slug (optional at creation), description (optional), image (nullable media id), isActive (default true), sortOrder (integer default 0). PATCH partial. Public projection: id/name/slug/description/image/sortOrder. Admin includes active state and timestamps. Seed names cover HR, marketing, job market preparation, programming, English.
+
+### Courses
+
+Input: title, slug optional on creation, shortDescription, description, category ObjectId, thumbnail nullable media id, curriculum array of `{title,topics:string[]}`, lecturesCount nonnegative integer, duration display string, targetAudience:string[], trainingMethod enum `online_live|offline|hybrid`, price nullable integer piastres, currency `EGP`, isFree boolean, status `draft|published|archived`, seo object. Drafts permit incomplete editorial fields but always valid types and references; publish requires title, descriptions, active category, duration, trainingMethod, and coherent pricing. Title required at creation, initial status draft unless complete publish input is supplied.
+
+Public list cards: id/title/slug/shortDescription/category `{id,name,slug}`/thumbnail/duration/price/currency/isFree. Detail additionally includes description/curriculum/lecturesCount/targetAudience/trainingMethod/seo and timestamps. Media fields serialize as safe metadata with public URL, not blobs. Admin receives ids suitable for form editing. No unspecified featured flag: homepage takes the latest published courses initially.
+
+### Lectures
+
+Input: title, optional initial slug, description, content, scheduledAt nullable ISO datetime for draft, duration positive integer minutes, meetingUrl nullable HTTPS URL, thumbnail nullable id, status `draft|published|completed|cancelled`, seo. Publishing requires title/description/scheduledAt/duration. Meeting URL may be added later. Public detail excludes meetingUrl under all circumstances. Public list uses title/slug/description/scheduledAt/duration/thumbnail. Time is stored in UTC and displayed in Africa/Cairo (including DST through Intl), never hardcoded UTC+2.
+
+### Articles
+
+Input: title, optional initial slug, excerpt, content plain text, thumbnail nullable id, status `draft|published`, seo. author determined server-side; publishedAt set on first publication, preserved on edits/republish. Public author is `{name}` only. Publishing requires title/excerpt/content; unpublish removes public visibility. Content length is bounded (propose 50,000 characters); paragraph rendering is accessible and escaped.
+
+### Registration
+
+```json
+{"fullName":"اسم المتدرب","phone":"01012345678","email":"learner@example.com","whatsappNumber":"+201012345678","registrationType":"course","course":"0123456789abcdef01234567"}
+```
+
+`fullName`: trimmed 2..120 characters. `phone`: required valid normalized phone. `email`: optional valid address, max 254; blank becomes absent. WhatsApp optional valid phone, blank becomes absent. `registrationType=course` requires course and forbids lecture; `lecture` requires lecture and forbids course. Only published eligible targets; courses must have active category, lectures must be scheduled in the future. No status or notes accepted. No proof of phone ownership in this MVP; staff confirms manually.
+
+```json
+{"success":true,"message":"Registration received","data":{"id":"0123456789abcdef01234567","status":"pending"},"meta":null}
+```
+
+Duplicate returns generic 409 `REGISTRATION_EXISTS` without identifying the owner or exposing PII. Admin notes bounded to 2,000 characters. Status values pending/confirmed/cancelled; admins may move between them. No automatic email/WhatsApp action on a transition. CSV exports stream filtered results with bounded processing, BOM, quoted/escaped cells, and formula-prefix neutralization for values beginning with whitespace/control followed by `=`, `+`, `-`, `@` (including international phone numbers). Fixed safe filename and Content-Disposition; export includes only necessary registration fields, no meeting URLs or private admin credentials. Test Arabic round-trip and Excel-safe output.
+
+### Settings and media
+
+Settings PATCH: academyName, logo id/null, contact `{phone,email,whatsapp}`, bounded socialLinks of known platforms and HTTPS URLs, address, aboutContent, footerInformation, seoDefaults. No secrets or arbitrary scripts/HTML. Public fields are explicitly projected. A missing settings record yields documented safe display defaults, not private config.
+
+Media creation returns id/url/mimeType/size/alt/visibility; public url is only usable when file is public and currently referenced by public content/settings. Upload errors have 400/413/415, never parser stack traces. File payload is multipart, not JSON/base64. Admin metadata listing must not expose GridFS internals. Request limits: 5 MiB/file, one image, verified JPEG/PNG/WebP. Private content streams have no-store and correct verified MIME/nosniff.
+
+## Publication/build contract
+
+No special admin-authenticated prerender endpoint: enumerate `/courses`, `/lectures`, `/articles` using all pagination pages and fetch public detail DTOs. Use the exact same eligibility rules as the public site. Async public build discovery runs without session cookies. A backend outage, invalid schema, missing page, or disappearing slug fails the build and preserves the last successful release; do not render an empty catalog on network error. Legitimately empty catalogs succeed.
+
+Public builds produce a versioned route manifest used by sitemap generation and output checks. Build-time publication is a snapshot, not immediate synchronization. Changes to status, content, slug, schedule, settings or media require public rebuild and cache invalidation. A publish/unpublish operation itself does not trigger hosting APIs in the MVP. Document operator responsibility visibly in the admin UI and deployment runbook.
+
+## Contract release discipline
+
+Phase 1 starts OpenAPI with actual foundation endpoints and shared envelope/error/security schemas. Phase 2 adds explicit create/update/public/admin variants for every resource, multipart and binary media responses, CSV response, pagination/query limits, all status codes and examples. Validate specification syntax/references and test implementation responses against it. Swagger UI describes deployed behavior, never future routes from this plan. Frontends generate local API types against a pinned backend specification artifact, track version/checksum, and update together on behavior changes. No copied hand-maintained domain interfaces that can drift independently.
