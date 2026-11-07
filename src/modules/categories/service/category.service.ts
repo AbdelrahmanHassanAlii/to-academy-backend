@@ -68,6 +68,30 @@ export class CategoryService {
     return categoryDto(category, true);
   }
 
+  async courseReference(id: string) {
+    const category = await this.model.findById(id).select('_id name slug isActive').lean().exec();
+    if (!category) throw missing();
+    return {
+      id: category._id.toString(),
+      name: category.name,
+      slug: category.slug,
+      isActive: category.isActive,
+    };
+  }
+
+  async activeCourseReferences(id?: string, slug?: string) {
+    const categories = await this.model
+      .find({ isActive: true, ...(id ? { _id: id } : {}), ...(slug ? { slug } : {}) })
+      .select('_id name slug')
+      .lean()
+      .exec();
+    return categories.map((category) => ({
+      id: category._id.toString(),
+      name: category.name,
+      slug: category.slug,
+    }));
+  }
+
   async create(input: CreateCategoryInput) {
     const parsed = categorySlugValueSchema.safeParse(input.slug ?? input.name.en ?? input.name.ar);
     if (!parsed.success)
