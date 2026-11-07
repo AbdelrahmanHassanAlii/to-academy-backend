@@ -13,17 +13,15 @@ export class MediaReferences {
     if (!/^[a-f0-9]{24}$/i.test(id))
       throw new AppError(400, 'MEDIA_INVALID', 'Invalid media reference');
     return this.connection.transaction(async (session) => {
-      const row = await this.connection
-        .collection('media')
-        .findOneAndUpdate(
-          {
-            _id: new Types.ObjectId(id),
-            state: 'ready',
-            ...(requirePublic ? { visibility: 'public' } : {}),
-          },
-          { $inc: { guard: 1 } },
-          { session, returnDocument: 'after' },
-        );
+      const row = await this.connection.collection('media').findOneAndUpdate(
+        {
+          _id: new Types.ObjectId(id),
+          state: 'ready',
+          ...(requirePublic ? { visibility: 'public' } : {}),
+        },
+        { $inc: { guard: 1 } },
+        { session, returnDocument: 'after' },
+      );
       if (!row || !['image/jpeg', 'image/png', 'image/webp'].includes(row.mimeType as string))
         throw new AppError(
           409,

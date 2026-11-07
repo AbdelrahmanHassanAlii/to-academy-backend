@@ -100,15 +100,23 @@ describe('foundation HTTP contracts', () => {
     expect(spec.status).toBe(200);
     expect(Object.keys(spec.body.paths).sort()).toEqual([
       '/admin/admins/me',
+      '/admin/articles',
+      '/admin/articles/{id}',
       '/admin/categories',
       '/admin/categories/{id}',
       '/admin/courses',
       '/admin/courses/{id}',
       '/admin/lectures',
       '/admin/lectures/{id}',
+      '/admin/media',
+      '/admin/media/{id}',
+      '/admin/media/{id}/content',
       '/admin/registrations',
       '/admin/registrations/export',
       '/admin/registrations/{id}',
+      '/admin/settings',
+      '/articles',
+      '/articles/{slug}',
       '/auth/csrf',
       '/auth/login',
       '/auth/logout',
@@ -121,8 +129,10 @@ describe('foundation HTTP contracts', () => {
       '/health',
       '/lectures',
       '/lectures/{slug}',
+      '/media/{id}',
       '/ready',
       '/registrations',
+      '/settings',
     ]);
     expect(spec.body.components.securitySchemes.sessionCookie.in).toBe('cookie');
     const docs = await request(app()).get('/api/v1/docs/');
